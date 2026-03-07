@@ -18,7 +18,7 @@ export const generateMCQFromFile = async (
     numberOfQuestions: number = 5
 ) => {
     try {
-        const modelName = "gemini-2.0-flash-lite";
+        const modelName = "gemini-3.1-flash-lite-preview";
         const model = genAI.getGenerativeModel({ model: modelName });
 
         const fileContent = fs.readFileSync(filePath);
@@ -63,12 +63,12 @@ export const generateMCQFromFile = async (
         responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
 
         const parsed = JSON.parse(responseText);
-        console.log(`[Gemini Service] ✅ Đã sinh thành công ${parsed.length} câu hỏi`);
+        console.log(`[Gemini Service] Đã sinh thành công ${parsed.length} câu hỏi`);
 
         return parsed;
 
     } catch (error) {
-        console.error("[Gemini Service] ❌ Lỗi:", error);
+        console.error("[Gemini Service] Lỗi:", error);
         throw new Error("Không thể xử lý file bằng Gemini API.");
     } finally {
         // Luôn luôn dọn dẹp file tạm

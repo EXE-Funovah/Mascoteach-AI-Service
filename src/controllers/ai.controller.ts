@@ -2,23 +2,7 @@ import { Request, Response } from 'express';
 import { generateMCQFromFile } from '../services/gemini.service';
 import { MCQItem, QuestionForBackend, OptionForBackend, BackendIntegrationResponse } from '../types/ai.types';
 
-/**
- * Controller xử lý endpoint tích hợp với .NET Backend
- * Backend sẽ gọi endpoint này để nhận JSON câu hỏi MCQ
- */
 
-/**
- * POST /api/v1/ai/generate-for-backend
- * 
- * Endpoint chính cho Backend gọi.
- * Nhận file (multipart/form-data), gọi Gemini AI, trả về JSON chuẩn hóa
- * khớp với AIGenerateQuizRequest DTO trên Backend.
- * 
- * Backend sau đó gọi QuizService.CreateFromAIAsync() để lưu vào DB:
- *   - Tạo 1 Quiz (bảng Quizzes)
- *   - Tạo N Questions (bảng Questions)  
- *   - Tạo 4 Options cho mỗi Question (bảng Options, với is_correct flag)
- */
 export const generateForBackend = async (req: Request, res: Response): Promise<any> => {
     try {
         // 1. Validate file upload
@@ -76,11 +60,11 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
             }
         };
 
-        console.log(`[AI → Backend] ✅ Đã tạo ${questionsForBackend.length} câu hỏi thành công!`);
+        console.log(`[AI → Backend] Đã tạo ${questionsForBackend.length} câu hỏi thành công!`);
         return res.status(200).json(response);
 
     } catch (error: any) {
-        console.error('[AI → Backend] ❌ Lỗi:', error.message);
+        console.error('[AI → Backend] Lỗi:', error.message);
         return res.status(500).json({
             success: false,
             message: error.message || 'Đã xảy ra lỗi trong quá trình tạo câu hỏi bằng AI.',

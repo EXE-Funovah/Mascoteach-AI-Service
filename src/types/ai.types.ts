@@ -1,11 +1,3 @@
-// ============================================
-// Type definitions cho AI Service Integration
-// Khớp với Schema DB mới (bảng Options tách riêng)
-// ============================================
-
-/**
- * Cấu trúc 1 câu hỏi MCQ do Gemini AI sinh ra (raw)
- */
 export interface MCQItem {
     question: string;
     options: string[];

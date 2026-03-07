@@ -1,0 +1,57 @@
+services:
+  ai_service:
+    build: .
+    container_name: mascoteach_ai
+    restart: unless-stopped
+    expose:
+      - "5001"
+    env_file:
+      - .env
+    environment:
+      - VIRTUAL_HOST=${DOMAIN_NAME}
+      - VIRTUAL_PORT=5001
+      - LETSENCRYPT_HOST=${DOMAIN_NAME}
+      - LETSENCRYPT_EMAIL=${ADMIN_EMAIL}
+
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy
+    container_name: mascoteach_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - certs:/etc/nginx/certs
+      - vhost:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+
+  acme-companion:
+    image: nginxproxy/acme-companion
+    container_name: mascoteach_ssl_helper
+    restart: unless-stopped
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - acme:/etc/acme.sh
+    depends_on:
+      - nginx-proxy
+
+  duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    container_name: mascoteach_duckdns
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Ho_Chi_Minh
+      - SUBDOMAINS=${DUCKDNS_SUBDOMAIN}
+      - TOKEN=${DUCKDNS_TOKEN}
+    restart: unless-stopped
+
+volumes:
+  certs:
+  vhost:
+  html:
+  acme:

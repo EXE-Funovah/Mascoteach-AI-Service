@@ -20,14 +20,14 @@ app.get('/', (req: Request, res: Response) => {
 // Route cho MCQ (giữ nguyên backward compatibility)
 app.use('/api/v1/mcq', mcqRoutes);
 
-// 🆕 Route cho AI Integration với Backend
+// Route cho AI Integration với Backend
 app.use('/api/v1/ai', aiRoutes);
 
 app.listen(port, () => {
     console.log(`========================================`);
-    console.log(`🚀 AI Server đang chạy tại: http://localhost:${port}`);
-    console.log(`🔑 API Key: ${process.env.GEMINI_API_KEY ? 'Đã thiết lập' : 'Chưa thiết lập'}`);
-    console.log(`📡 AI Endpoint: POST /api/v1/ai/generate-for-backend`);
-    console.log(`❤️  Health Check: GET /api/v1/ai/health`);
+    console.log(`AI Server đang chạy tại: http://localhost:${port}`);
+    console.log(`API Key: ${process.env.GEMINI_API_KEY ? 'Đã thiết lập' : 'Chưa thiết lập'}`);
+    console.log(`AI Endpoint: POST /api/v1/ai/generate-for-backend`);
+    console.log(`Health Check: GET /api/v1/ai/health`);
     console.log(`========================================`);
 });
