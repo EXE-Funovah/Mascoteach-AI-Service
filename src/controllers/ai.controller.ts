@@ -1,28 +1,32 @@
 import { Request, Response } from 'express';
 import { generateMCQFromFile } from '../services/gemini.service';
+import { downloadFromUrl } from '../services/download.service';
 import { MCQItem, QuestionForBackend, OptionForBackend, BackendIntegrationResponse } from '../types/ai.types';
 
 
 export const generateForBackend = async (req: Request, res: Response): Promise<any> => {
     try {
-        // 1. Validate file upload
-        if (!req.file) {
+        // 1. Validate fileUrl (JSON body)
+        const { fileUrl } = req.body;
+        if (!fileUrl) {
             return res.status(400).json({
                 success: false,
-                message: 'Vui lòng upload một file tài liệu hoặc hình ảnh.',
+                message: 'Vui lòng cung cấp fileUrl (S3 URL của tài liệu).',
                 data: null
             });
         }
 
-        // 2. Lấy metadata từ request body (optional fields từ Backend)
+        // 2. Download file từ S3 về temp
+        console.log(`[AI → Backend] Đang download file từ URL: ${fileUrl}`);
+        const downloaded = await downloadFromUrl(fileUrl);
+        const { filePath, mimeType, fileName: originalName } = downloaded;
+
+        // 3. Lấy metadata từ request body
         const documentId = req.body.documentId ? parseInt(req.body.documentId) : undefined;
-        const quizTitle = req.body.quizTitle || `Quiz từ ${req.file.originalname}`;
+        const quizTitle = req.body.quizTitle || `Quiz từ ${originalName}`;
         const numberOfQuestions = req.body.numberOfQuestions ? parseInt(req.body.numberOfQuestions) : 5;
 
-        const filePath = req.file.path;
-        const mimeType = req.file.mimetype;
-
-        console.log(`[AI → Backend] Đang xử lý file: ${req.file.originalname}`);
+        console.log(`[AI → Backend] Đang xử lý file: ${originalName}`);
         console.log(`[AI → Backend] DocumentId: ${documentId || 'N/A'}, Số câu hỏi: ${numberOfQuestions}`);
 
         // 3. Gọi Gemini Service để generate MCQ
