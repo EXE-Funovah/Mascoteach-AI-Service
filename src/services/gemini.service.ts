@@ -6,10 +6,19 @@ dotenv.config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
-export const generateMCQFromFile = async (filePath: string, mimeType: string) => {
+/**
+ * Xử lý file và gọi Gemini AI để sinh câu hỏi MCQ
+ * @param filePath Đường dẫn file đã upload
+ * @param mimeType Loại MIME của file
+ * @param numberOfQuestions Số câu hỏi cần sinh (mặc định: 5)
+ */
+export const generateMCQFromFile = async (
+    filePath: string,
+    mimeType: string,
+    numberOfQuestions: number = 5
+) => {
     try {
-        // Đã cập nhật chính xác tên model bạn lấy từ Google AI Studio
-        const modelName = "gemini-3.1-flash-lite-preview";
+        const modelName = "gemini-2.0-flash-lite";
         const model = genAI.getGenerativeModel({ model: modelName });
 
         const fileContent = fs.readFileSync(filePath);
@@ -25,7 +34,7 @@ export const generateMCQFromFile = async (filePath: string, mimeType: string) =>
         const prompt = `
             Bạn là một giáo sư chuyên xây dựng đề thi trắc nghiệm (Multiple Choice Questions - MCQ).
             Tôi cung cấp cho bạn một tài liệu đính kèm (có thể là văn bản, hình ảnh, biểu đồ, hoặc bản scan). 
-            Hãy "đọc", "nhìn" và phân tích kỹ toàn bộ thông tin trong tài liệu đó, sau đó tạo ra 5 câu hỏi trắc nghiệm.
+            Hãy "đọc", "nhìn" và phân tích kỹ toàn bộ thông tin trong tài liệu đó, sau đó tạo ra ${numberOfQuestions} câu hỏi trắc nghiệm.
             
             Yêu cầu bắt buộc:
             - Nếu tài liệu là hình ảnh/biểu đồ, hãy trích xuất dữ liệu từ hình ảnh đó để đặt câu hỏi.
@@ -45,16 +54,21 @@ export const generateMCQFromFile = async (filePath: string, mimeType: string) =>
             ]
         `;
 
+        console.log(`[Gemini Service] Đang gọi model: ${modelName}, yêu cầu: ${numberOfQuestions} câu hỏi`);
+
         const result = await model.generateContent([prompt, filePart]);
         let responseText = result.response.text();
 
         // Xử lý chuỗi JSON: Cắt bỏ các thẻ markdown (```json và ```) nếu AI vô tình sinh ra
         responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
 
-        return JSON.parse(responseText);
+        const parsed = JSON.parse(responseText);
+        console.log(`[Gemini Service] ✅ Đã sinh thành công ${parsed.length} câu hỏi`);
+
+        return parsed;
 
     } catch (error) {
-        console.error("Lỗi tại Gemini Service:", error);
+        console.error("[Gemini Service] ❌ Lỗi:", error);
         throw new Error("Không thể xử lý file bằng Gemini API.");
     } finally {
         // Luôn luôn dọn dẹp file tạm
