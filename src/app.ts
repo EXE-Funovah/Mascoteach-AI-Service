@@ -1,8 +1,10 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
 import mcqRoutes from './routes/mcq.route';
 import aiRoutes from './routes/ai.routes';
+import { setupMascotWebSocket } from './websocket/mascot-ws.handler';
 
 dotenv.config();
 
@@ -23,11 +25,18 @@ app.use('/api/v1/mcq', mcqRoutes);
 // Route cho AI Integration với Backend
 app.use('/api/v1/ai', aiRoutes);
 
-app.listen(port, () => {
+// Create HTTP server (required for WebSocket upgrade)
+const server = createServer(app);
+
+// Mount WebSocket handler for mascot live audio
+setupMascotWebSocket(server);
+
+server.listen(port, () => {
     console.log(`========================================`);
     console.log(`AI Server đang chạy tại: http://localhost:${port}`);
     console.log(`API Key: ${process.env.GEMINI_API_KEY ? 'Đã thiết lập' : 'Chưa thiết lập'}`);
     console.log(`AI Endpoint: POST /api/v1/ai/generate-for-backend`);
     console.log(`Health Check: GET /api/v1/ai/health`);
+    console.log(`🎤 Mascot Live WS: ws://localhost:${port}/ws/mascot-live`);
     console.log(`========================================`);
 });
