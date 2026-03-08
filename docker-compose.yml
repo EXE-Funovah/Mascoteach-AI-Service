@@ -25,9 +25,8 @@ services:
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       - certs:/etc/nginx/certs
-      - vhost:/etc/nginx/vhost.d
+      - ./nginx/vhost.d:/etc/nginx/vhost.d:ro
       - html:/usr/share/nginx/html
-      - ./nginx/custom-proxy.conf:/etc/nginx/conf.d/custom-proxy.conf:ro
     environment:
       - DEFAULT_HOST=${DOMAIN_NAME}
     networks:
@@ -67,6 +66,5 @@ networks:
 
 volumes:
   certs:
-  vhost:
   html:
   acme:
