@@ -22,11 +22,13 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "8443:443"
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
-      - certs:/etc/nginx/certs
-      - ./nginx/vhost.d:/etc/nginx/vhost.d:ro
+      - certs:/etc/nginx/certs:ro
+      - vhost:/etc/nginx/vhost.d
       - html:/usr/share/nginx/html
+      - ./nginx/vhost.d/ai.mascoteach.com:/etc/nginx/vhost.d/ai.mascoteach.com:ro
     environment:
       - DEFAULT_HOST=${DOMAIN_NAME}
     networks:
@@ -40,6 +42,7 @@ services:
       - nginx-proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - certs:/etc/nginx/certs
       - acme:/etc/acme.sh
     environment:
       - DEFAULT_EMAIL=${ADMIN_EMAIL}
@@ -66,5 +69,6 @@ networks:
 
 volumes:
   certs:
+  vhost:
   html:
   acme:
