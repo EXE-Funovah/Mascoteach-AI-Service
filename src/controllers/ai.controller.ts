@@ -25,12 +25,21 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
         const documentId = req.body.documentId ? parseInt(req.body.documentId) : undefined;
         const quizTitle = req.body.quizTitle || `Quiz từ ${originalName}`;
         const numberOfQuestions = req.body.numberOfQuestions ? parseInt(req.body.numberOfQuestions) : 5;
+        const difficultyDistribution = req.body.difficultyDistribution || undefined;
+        const language = req.body.language || 'vi';
 
         console.log(`[AI → Backend] Đang xử lý file: ${originalName}`);
-        console.log(`[AI → Backend] DocumentId: ${documentId || 'N/A'}, Số câu hỏi: ${numberOfQuestions}`);
+        console.log(`[AI → Backend] DocumentId: ${documentId || 'N/A'}, Số câu hỏi: ${numberOfQuestions}, Ngôn ngữ: ${language}`);
+        if (difficultyDistribution) {
+            console.log(`[AI → Backend] Phân bổ độ khó: Cấp 1=${difficultyDistribution[1]}%, Cấp 2=${difficultyDistribution[2]}%, Cấp 3=${difficultyDistribution[3]}%`);
+        }
 
         // 3. Gọi Gemini Service để generate MCQ
-        const rawMCQData: MCQItem[] = await generateMCQFromFile(filePath, mimeType, numberOfQuestions);
+        const rawMCQData: MCQItem[] = await generateMCQFromFile(filePath, mimeType, {
+            numberOfQuestions,
+            difficultyDistribution,
+            language,
+        });
 
         // 4. Chuẩn hóa: map từ Gemini raw output → format khớp bảng Questions + Options
         const questionsForBackend: QuestionForBackend[] = rawMCQData.map((item) => {
