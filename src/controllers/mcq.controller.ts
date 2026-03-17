@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { generateMCQFromFile } from '../services/gemini.service';
+import { convertForGemini } from '../services/file-converter.service';
 
 export const generateMCQ = async (req: Request, res: Response): Promise<any> => {
     try {
@@ -10,13 +11,19 @@ export const generateMCQ = async (req: Request, res: Response): Promise<any> => 
             });
         }
 
-        const filePath = req.file.path;
-        const mimeType = req.file.mimetype;
+        const rawFilePath = req.file.path;
+        const rawMimeType = req.file.mimetype;
 
         console.log(`[AI Module] Đang phân tích file: ${req.file.originalname} (${req.file.mimetype})`);
 
+        // Convert file if needed (docx, pptx → txt)
+        const converted = await convertForGemini(rawFilePath, rawMimeType, req.file.originalname);
+        if (converted.wasConverted) {
+            console.log(`[AI Module] Đã chuyển đổi: ${rawMimeType} → ${converted.mimeType}`);
+        }
+
         // Gọi service xử lý
-        const mcqData = await generateMCQFromFile(filePath, mimeType);
+        const mcqData = await generateMCQFromFile(converted.filePath, converted.mimeType);
 
         return res.status(200).json({
             success: true,

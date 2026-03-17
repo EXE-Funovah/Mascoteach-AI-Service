@@ -78,6 +78,8 @@ function guessMimeType(ext: string): string {
         '.pdf': 'application/pdf',
         '.doc': 'application/msword',
         '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        '.ppt': 'application/vnd.ms-powerpoint',
         '.txt': 'text/plain',
         '.png': 'image/png',
         '.jpg': 'image/jpeg',

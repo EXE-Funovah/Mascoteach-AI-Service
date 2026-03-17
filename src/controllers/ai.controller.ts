@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { generateMCQFromFile } from '../services/gemini.service';
 import { downloadFromUrl } from '../services/download.service';
+import { convertForGemini } from '../services/file-converter.service';
 import { MCQItem, QuestionForBackend, OptionForBackend, BackendIntegrationResponse } from '../types/ai.types';
 
 
@@ -19,7 +20,14 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
         // 2. Download file từ S3 về temp
         console.log(`[AI → Backend] Đang download file từ URL: ${fileUrl}`);
         const downloaded = await downloadFromUrl(fileUrl);
-        const { filePath, mimeType, fileName: originalName } = downloaded;
+        const { filePath: rawFilePath, mimeType: rawMimeType, fileName: originalName } = downloaded;
+
+        // 2.5. Convert file nếu Gemini không hỗ trợ native (docx, pptx, doc → txt)
+        const converted = await convertForGemini(rawFilePath, rawMimeType, originalName);
+        const { filePath, mimeType } = converted;
+        if (converted.wasConverted) {
+            console.log(`[AI → Backend] Đã chuyển đổi file: ${rawMimeType} → ${mimeType}`);
+        }
 
         // 3. Lấy metadata từ request body
         const documentId = req.body.documentId ? parseInt(req.body.documentId) : undefined;
@@ -34,7 +42,7 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
             console.log(`[AI → Backend] Phân bổ độ khó: Cấp 1=${difficultyDistribution[1]}%, Cấp 2=${difficultyDistribution[2]}%, Cấp 3=${difficultyDistribution[3]}%`);
         }
 
-        // 3. Gọi Gemini Service để generate MCQ
+        // 4. Gọi Gemini Service để generate MCQ
         const rawMCQData: MCQItem[] = await generateMCQFromFile(filePath, mimeType, {
             numberOfQuestions,
             difficultyDistribution,
