@@ -1,10 +1,10 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { createServer } from 'http';
 import mcqRoutes from './routes/mcq.route';
 import aiRoutes from './routes/ai.routes';
-import { setupMascotWebSocket } from './websocket/mascot-ws.handler';
+import mascotLiveRoutes from './routes/mascot-live.routes';
+import { getAgoraLiveReadiness } from './config/agora-live.config';
 
 dotenv.config();
 
@@ -34,18 +34,21 @@ app.use('/api/v1/mcq', mcqRoutes);
 // Route cho AI Integration với Backend
 app.use('/api/v1/ai', aiRoutes);
 
-// Create HTTP server (required for WebSocket upgrade)
-const server = createServer(app);
+// Route cho mascot live orchestration via Agora
+app.use('/api/v1/mascot-live', mascotLiveRoutes);
 
-// Mount WebSocket handler for mascot live audio
-setupMascotWebSocket(server);
+app.listen(port, () => {
+    const agoraLive = getAgoraLiveReadiness();
 
-server.listen(port, () => {
     console.log(`========================================`);
     console.log(`AI Server đang chạy tại: http://localhost:${port}`);
-    console.log(`API Key: ${process.env.GEMINI_API_KEY ? 'Đã thiết lập' : 'Chưa thiết lập'}`);
+    console.log(`OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Đã thiết lập' : 'Chưa thiết lập'}`);
     console.log(`AI Endpoint: POST /api/v1/ai/generate-for-backend`);
     console.log(`Health Check: GET /api/v1/ai/health`);
-    console.log(`🎤 Mascot Live WS: ws://localhost:${port}/ws/mascot-live`);
+    console.log(`Agora Native ConvoAI Health: GET /api/v1/mascot-live/health`);
+    console.log(`Agora Native ConvoAI Session: POST /api/v1/mascot-live/session`);
+    console.log(`Agora RTC ready: ${agoraLive.rtcReady ? 'yes' : `no (${agoraLive.missingRtcFields.join(', ') || 'unknown'})`}`);
+    console.log(`Agora lifecycle ready: ${agoraLive.lifecycleApiReady ? 'yes' : `no (${agoraLive.missingLifecycleFields.join(', ') || 'unknown'})`}`);
+    console.log(`Agora native ConvoAI ready: ${agoraLive.convoAiReady ? 'yes' : `no (${agoraLive.missingConvoAiFields.join(', ') || 'unknown'})`}`);
     console.log(`========================================`);
 });

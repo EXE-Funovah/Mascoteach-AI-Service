@@ -2,13 +2,13 @@
  * Mascoteach AI Service — File Converter
  *
  * Converts unsupported file formats (.docx, .pptx, .doc) into
- * formats that Gemini can natively process (.txt / .pdf).
+ * formats that OpenAI can process directly (.txt / .pdf).
  *
  * Strategy:
  *   • .docx  → extract text via mammoth → save as .txt
  *   • .pptx  → parse ZIP/XML structure → extract slide text → save as .txt
  *   • .doc   → attempt mammoth (limited support) → save as .txt
- *   • .pdf, .txt, images → passthrough (Gemini supports natively)
+ *   • .pdf, .txt, images → passthrough (OpenAI supports directly)
  */
 
 import * as fs from 'fs';
@@ -16,8 +16,8 @@ import * as path from 'path';
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
 
-// MIME types that Gemini can handle natively — no conversion needed
-const GEMINI_NATIVE_MIMES = new Set([
+// MIME types that OpenAI can handle directly — no conversion needed
+const OPENAI_NATIVE_MIMES = new Set([
     'application/pdf',
     'text/plain',
     'text/html',
@@ -40,10 +40,10 @@ export interface ConvertedFile {
 }
 
 /**
- * Check if a file needs conversion before being sent to Gemini.
+ * Check if a file needs conversion before being sent to OpenAI.
  */
 export function needsConversion(mimeType: string, filePath: string): boolean {
-    if (GEMINI_NATIVE_MIMES.has(mimeType)) return false;
+    if (OPENAI_NATIVE_MIMES.has(mimeType)) return false;
 
     const ext = path.extname(filePath).toLowerCase();
     return CONVERTIBLE_EXTENSIONS.has(ext);
@@ -51,16 +51,16 @@ export function needsConversion(mimeType: string, filePath: string): boolean {
 
 /**
  * Main conversion pipeline.
- * If the file is natively supported by Gemini, returns it as-is.
+ * If the file is directly supported by OpenAI, returns it as-is.
  * Otherwise, extracts text and saves as .txt
  */
-export async function convertForGemini(
+export async function convertForOpenAI(
     filePath: string,
     mimeType: string,
     originalName: string
 ): Promise<ConvertedFile> {
-    // If Gemini can handle it natively, passthrough
-    if (GEMINI_NATIVE_MIMES.has(mimeType)) {
+    // If OpenAI can handle it directly, passthrough
+    if (OPENAI_NATIVE_MIMES.has(mimeType)) {
         return { filePath, mimeType, originalName, wasConverted: false };
     }
 

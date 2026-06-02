@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
-import { generateMCQFromFile } from '../services/gemini.service';
+import { generateMCQFromFile, OPENAI_QUIZ_MODEL } from '../services/openai.service';
 import { downloadFromUrl } from '../services/download.service';
-import { convertForGemini } from '../services/file-converter.service';
+import { convertForOpenAI } from '../services/file-converter.service';
 import { MCQItem, QuestionForBackend, OptionForBackend, BackendIntegrationResponse } from '../types/ai.types';
+import { getAgoraLiveReadiness } from '../config/agora-live.config';
 
 
 export const generateForBackend = async (req: Request, res: Response): Promise<any> => {
@@ -22,8 +23,8 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
         const downloaded = await downloadFromUrl(fileUrl);
         const { filePath: rawFilePath, mimeType: rawMimeType, fileName: originalName } = downloaded;
 
-        // 2.5. Convert file nếu Gemini không hỗ trợ native (docx, pptx, doc → txt)
-        const converted = await convertForGemini(rawFilePath, rawMimeType, originalName);
+        // 2.5. Convert file nếu OpenAI không hỗ trợ native (docx, pptx, doc → txt)
+        const converted = await convertForOpenAI(rawFilePath, rawMimeType, originalName);
         const { filePath, mimeType } = converted;
         if (converted.wasConverted) {
             console.log(`[AI → Backend] Đã chuyển đổi file: ${rawMimeType} → ${mimeType}`);
@@ -42,14 +43,14 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
             console.log(`[AI → Backend] Phân bổ độ khó: Cấp 1=${difficultyDistribution[1]}%, Cấp 2=${difficultyDistribution[2]}%, Cấp 3=${difficultyDistribution[3]}%`);
         }
 
-        // 4. Gọi Gemini Service để generate MCQ
+        // 4. Gọi OpenAI Service để generate MCQ
         const rawMCQData: MCQItem[] = await generateMCQFromFile(filePath, mimeType, {
             numberOfQuestions,
             difficultyDistribution,
             language,
         });
 
-        // 4. Chuẩn hóa: map từ Gemini raw output → format khớp bảng Questions + Options
+        // 4. Chuẩn hóa: map từ OpenAI raw output → format khớp bảng Questions + Options
         const questionsForBackend: QuestionForBackend[] = rawMCQData.map((item) => {
             // Chuyển đổi options array thành cấu trúc Options table
             // Với is_correct = true cho đáp án đúng
@@ -77,7 +78,7 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
             metadata: {
                 generatedAt: new Date().toISOString(),
                 questionCount: questionsForBackend.length,
-                model: 'gemini-2.0-flash-lite'
+                model: OPENAI_QUIZ_MODEL
             }
         };
 
@@ -100,6 +101,8 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
  * Endpoint để Backend kiểm tra AI Service có đang hoạt động không
  */
 export const healthCheck = async (req: Request, res: Response): Promise<any> => {
+    const agoraLive = getAgoraLiveReadiness();
+
     return res.status(200).json({
         success: true,
         message: 'Mascoteach AI Service đang hoạt động!',
@@ -107,7 +110,8 @@ export const healthCheck = async (req: Request, res: Response): Promise<any> => 
             service: 'mascoteach-ai-service',
             version: '1.0.0',
             timestamp: new Date().toISOString(),
-            geminiApiKey: process.env.GEMINI_API_KEY ? 'configured' : 'missing'
+            openaiApiKey: process.env.OPENAI_API_KEY ? 'configured' : 'missing',
+            agoraLive,
         }
     });
 };
