@@ -1,10 +1,13 @@
 import { Router } from 'express';
-import { generateForBackend, healthCheck } from '../controllers/ai.controller';
+import { chat, generateForBackend, healthCheck } from '../controllers/ai.controller';
 
 const router = Router();
 
 // Health check - Backend dùng để kiểm tra AI Service còn sống không
 router.get('/health', healthCheck);
+
+// Text chat fallback for the Mascot widget
+router.post('/chat', chat);
 
 // Endpoint chính: Nhận fileUrl (S3) qua JSON → AI download & xử lý → trả JSON chuẩn hóa
 // Request:  POST application/json { fileUrl, documentId?, quizTitle?, numberOfQuestions?, difficultyDistribution?, language? }
