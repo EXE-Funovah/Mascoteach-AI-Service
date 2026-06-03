@@ -4,6 +4,7 @@ import { downloadFromUrl } from '../services/download.service';
 import { convertForOpenAI } from '../services/file-converter.service';
 import { MCQItem, QuestionForBackend, OptionForBackend, BackendIntegrationResponse } from '../types/ai.types';
 import { getAgoraLiveReadiness } from '../config/agora-live.config';
+import OpenAI from 'openai';
 
 
 export const generateForBackend = async (req: Request, res: Response): Promise<any> => {
@@ -91,6 +92,75 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
             success: false,
             message: error.message || 'Đã xảy ra lỗi trong quá trình tạo câu hỏi bằng AI.',
             data: null
+        });
+    }
+};
+
+/**
+ * POST /api/v1/ai/chat
+ *
+ * Lightweight text fallback for the mascot widget. The voice/live experience is
+ * handled by /api/v1/mascot-live; this endpoint keeps the legacy chat fallback
+ * from returning 404 and gives the mascot a real AI response when audio is not
+ * available.
+ */
+export const chat = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+        const history = Array.isArray(req.body?.history) ? req.body.history : [];
+
+        if (!message) {
+            return res.status(400).json({
+                success: false,
+                message: 'Vui lòng cung cấp message.',
+                data: null,
+            });
+        }
+
+        if (!process.env.OPENAI_API_KEY) {
+            return res.status(503).json({
+                success: false,
+                message: 'OPENAI_API_KEY chưa được cấu hình.',
+                data: null,
+            });
+        }
+
+        const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const safeHistory = history
+            .slice(-8)
+            .map((item: any) => ({
+                role: item?.role === 'assistant' ? 'assistant' : 'user',
+                content: String(item?.content || item?.message || '').slice(0, 1000),
+            }))
+            .filter((item: { content: string }) => item.content);
+
+        const response = await client.responses.create({
+            model: process.env.OPENAI_CHAT_MODEL || 'gpt-5.4-mini',
+            input: [
+                {
+                    role: 'system',
+                    content:
+                        'Bạn là Sumadi, trợ lý học tập thân thiện của Mascoteach. Trả lời ngắn gọn bằng tiếng Việt, ưu tiên hướng dẫn giáo viên/học sinh thao tác trong nền tảng, tạo quiz, tổ chức live game và học hiệu quả.',
+                },
+                ...safeHistory,
+                { role: 'user', content: message },
+            ],
+        });
+
+        const reply = response.output_text?.trim() || 'Mình chưa có câu trả lời phù hợp. Bạn thử hỏi lại ngắn hơn nhé.';
+
+        return res.status(200).json({
+            success: true,
+            message: 'Mascot chat response generated.',
+            data: { reply },
+            reply,
+        });
+    } catch (error: any) {
+        console.error('[AI Chat] Lỗi:', error.message);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Đã xảy ra lỗi khi chat với AI.',
+            data: null,
         });
     }
 };
