@@ -6,7 +6,7 @@ import { MCQItem } from '../types/ai.types';
 
 dotenv.config();
 
-export const OPENAI_QUIZ_MODEL = process.env.OPENAI_QUIZ_MODEL || 'gpt-5.4-mini';
+export const OPENAI_QUIZ_MODEL = process.env.OPENAI_QUIZ_MODEL || 'gpt-5-mini';
 
 export interface DifficultyDistribution {
     1: number;
@@ -64,10 +64,22 @@ Yêu cầu:
 - Phân bổ độ khó chính xác: ${counts.level1} câu Dễ, ${counts.level2} câu Trung bình, ${counts.level3} câu Khó.
 - Mỗi câu có đúng 4 lựa chọn và chỉ 1 đáp án đúng.
 - correctAnswer phải giống nguyên văn một phần tử trong options.
+- Các đáp án sai phải là phương án gây nhiễu hợp lý, cùng loại với đáp án đúng.
+- 4 lựa chọn phải có độ dài, mức độ chi tiết và phong cách ngữ pháp tương đương.
+- Không tạo đáp án sai quá ngắn, hài hước, vô lý, hoặc rõ ràng không liên quan.
+- Đáp án đúng không được nổi bật vì dài hơn, cụ thể hơn, hoặc trang trọng hơn các đáp án khác.
+- Các đáp án sai nên phản ánh hiểu lầm phổ biến của học sinh dựa trên nội dung tài liệu.
 - Mỗi câu hỏi phải tự chứa đủ ngữ cảnh để người học trả lời độc lập.
 - Không tham chiếu mơ hồ tới hình ảnh, biểu đồ hoặc bảng. Nếu cần dữ liệu, hãy mô tả dữ liệu cần thiết bằng chữ.
 - Chỉ sử dụng kiến thức trong tài liệu; tạo lựa chọn gây nhiễu hợp lý.
-- explanation giải thích ngắn gọn vì sao đáp án đúng.`;
+- explanation giải thích ngắn gọn vì sao đáp án đúng.
+
+Trước khi trả JSON, hãy tự kiểm tra thầm từng câu:
+1. Người học có thể đoán đáp án đúng chỉ nhờ độ dài hoặc phong cách lựa chọn không?
+2. Có đáp án sai nào rõ ràng không liên quan hoặc quá dễ loại không?
+3. Tất cả lựa chọn có đủ hợp lý nếu người học chưa nắm bài không?
+
+Nếu có lựa chọn nào không đạt, hãy viết lại lựa chọn đó trước khi trả kết quả cuối cùng.`;
 }
 
 function buildQuestionSchema(numberOfQuestions: number): Record<string, unknown> {
