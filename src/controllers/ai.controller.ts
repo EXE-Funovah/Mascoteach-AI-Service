@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { generateMCQFromFile, OPENAI_QUIZ_MODEL } from '../services/openai.service';
 import { downloadFromUrl } from '../services/download.service';
+import { extractFromZipIfNeeded } from '../services/unzip.service';
 import { convertForOpenAI } from '../services/file-converter.service';
 import { MCQItem, QuestionForBackend, OptionForBackend, BackendIntegrationResponse } from '../types/ai.types';
 import { getAgoraLiveReadiness } from '../config/agora-live.config';
@@ -22,9 +23,11 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
         // 2. Download file từ S3 về temp
         console.log(`[AI → Backend] Đang download file từ URL: ${fileUrl}`);
         const downloaded = await downloadFromUrl(fileUrl);
-        const { filePath: rawFilePath, mimeType: rawMimeType, fileName: originalName } = downloaded;
 
-        // 2.5. Convert file nếu OpenAI không hỗ trợ native (docx, pptx, doc → txt)
+        // 2.5. Extract zip nếu file tải về là archive, rồi convert nếu OpenAI không hỗ trợ native
+        const unzipped = await extractFromZipIfNeeded(downloaded.filePath, downloaded.mimeType, downloaded.fileName);
+        const { filePath: rawFilePath, mimeType: rawMimeType, fileName: originalName } = unzipped;
+
         const converted = await convertForOpenAI(rawFilePath, rawMimeType, originalName);
         const { filePath, mimeType } = converted;
         if (converted.wasConverted) {
@@ -167,7 +170,7 @@ export const chat = async (req: Request, res: Response): Promise<any> => {
 
 /**
  * GET /api/v1/ai/health
- * 
+ *
  * Endpoint để Backend kiểm tra AI Service có đang hoạt động không
  */
 export const healthCheck = async (req: Request, res: Response): Promise<any> => {
