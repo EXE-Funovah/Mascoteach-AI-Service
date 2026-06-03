@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { generateMCQFromFile } from '../services/gemini.service';
-import { convertForGemini } from '../services/file-converter.service';
+import { generateMCQFromFile } from '../services/openai.service';
+import { convertForOpenAI } from '../services/file-converter.service';
 
 export const generateMCQ = async (req: Request, res: Response): Promise<any> => {
     try {
@@ -17,7 +17,7 @@ export const generateMCQ = async (req: Request, res: Response): Promise<any> => 
         console.log(`[AI Module] Đang phân tích file: ${req.file.originalname} (${req.file.mimetype})`);
 
         // Convert file if needed (docx, pptx → txt)
-        const converted = await convertForGemini(rawFilePath, rawMimeType, req.file.originalname);
+        const converted = await convertForOpenAI(rawFilePath, rawMimeType, req.file.originalname);
         if (converted.wasConverted) {
             console.log(`[AI Module] Đã chuyển đổi: ${rawMimeType} → ${converted.mimeType}`);
         }
