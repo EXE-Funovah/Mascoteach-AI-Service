@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ai-service
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -17,7 +22,15 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
+          script_stop: true
           script: |
+            set -e
+
             cd /data/docker/Mascoteach-AI-Service
-            git pull
-            docker compose -f docker-compose.server.yml up -d --build
+
+            git fetch origin main
+            git reset --hard origin/main
+
+            docker compose -f docker-compose.server.yml up -d --build --remove-orphans
+
+            docker image prune -f
