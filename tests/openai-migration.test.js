@@ -38,6 +38,64 @@ test('quiz generation request uses OpenAI Responses structured outputs', () => {
     delete require.cache[openAIServicePath];
 });
 
+test('quiz generation request trims repetitive and oversized document text before sending to OpenAI', () => {
+    const openAIServicePath = require.resolve('../dist/services/openai.service.js');
+    const originalMaxChars = process.env.OPENAI_MAX_DOCUMENT_CHARS;
+    const originalMaxLines = process.env.OPENAI_MAX_DOCUMENT_LINES;
+
+    process.env.OPENAI_MAX_DOCUMENT_CHARS = '180';
+    process.env.OPENAI_MAX_DOCUMENT_LINES = '6';
+    delete require.cache[openAIServicePath];
+    const { buildQuizResponseRequest, prepareDocumentTextForPrompt } = require(openAIServicePath);
+
+    const rawDocument = [
+        'Mascoteach Grade 6 Science',
+        'Page 1',
+        'Bài 1: Hệ mặt trời gồm Mặt Trời và các hành tinh quay quanh nó.',
+        '',
+        'Mascoteach Grade 6 Science',
+        'Page 2',
+        'Bài 2: Trái Đất tự quay quanh trục tạo ra ngày và đêm.',
+        '',
+        'Mascoteach Grade 6 Science',
+        'Page 3',
+        'Bài 3: Mặt Trăng quay quanh Trái Đất và phản xạ ánh sáng Mặt Trời.',
+        '',
+        'Kết luận: Học sinh cần phân biệt chuyển động tự quay và chuyển động quay quanh Mặt Trời.',
+    ].join('\n');
+
+    const prepared = prepareDocumentTextForPrompt(rawDocument);
+    assert.equal(prepared.includes('Mascoteach Grade 6 Science'), false);
+    assert.equal(prepared.includes('Page 1'), false);
+    assert.match(prepared, /\.\.\.\[nội dung đã được rút gọn để tiết kiệm token\]\.\.\./);
+    assert.match(prepared, /Bài 1: Hệ mặt trời/);
+    assert.match(prepared, /quay quanh Mặt Trời\./);
+
+    const request = buildQuizResponseRequest(rawDocument, {
+        numberOfQuestions: 3,
+        language: 'vi',
+    });
+    const documentPayload = request.input[0].content[1].text;
+
+    assert.equal(documentPayload.includes('Mascoteach Grade 6 Science'), false);
+    assert.equal(documentPayload.includes('Page 2'), false);
+    assert.ok(documentPayload.length < rawDocument.length + 20);
+
+    if (originalMaxChars === undefined) {
+        delete process.env.OPENAI_MAX_DOCUMENT_CHARS;
+    } else {
+        process.env.OPENAI_MAX_DOCUMENT_CHARS = originalMaxChars;
+    }
+
+    if (originalMaxLines === undefined) {
+        delete process.env.OPENAI_MAX_DOCUMENT_LINES;
+    } else {
+        process.env.OPENAI_MAX_DOCUMENT_LINES = originalMaxLines;
+    }
+
+    delete require.cache[openAIServicePath];
+});
+
 test('Agora is the only mascot live path; no direct model WebSocket relay remains', () => {
     const root = path.resolve(__dirname, '..');
     const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));

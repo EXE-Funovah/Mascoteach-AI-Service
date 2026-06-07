@@ -18,6 +18,20 @@ export interface AgoraLiveRuntimeConfig {
     defaultChannelPrefix: string;
     defaultLanguage: string;
     defaultVoice: string;
+    systemPrompt: string;
+    failureMessage: string;
+    asrVendor: string;
+    asrLanguage: string;
+    asrModel: string;
+    asrUrl: string;
+    llmVendor: string;
+    llmModel: string;
+    llmUrl: string;
+    ttsVendor: string;
+    ttsModel: string;
+    ttsUrl: string;
+    ttsVoiceId: string;
+    skipConvoAiJoinOnCreate: boolean;
     isConfigured: boolean;
     missingFields: string[];
     rtcReady: boolean;
@@ -75,6 +89,7 @@ export interface AgoraLiveReadiness {
     provider: 'agora';
     engine: AgoraLiveEngine;
     configured: boolean;
+    skipConvoAiJoinOnCreate: boolean;
     rtcReady: boolean;
     lifecycleApiReady: boolean;
     convoAiReady: boolean;

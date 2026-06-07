@@ -18,12 +18,22 @@ const getSingleRouteParam = (value: string | string[] | undefined): string => {
 
 export const createAgoraLiveSession = async (req: Request, res: Response): Promise<Response> => {
     try {
+        const config = getAgoraLiveConfig();
         const created = agoraLiveService.createSession({
             userId: typeof req.body?.userId === 'string' ? req.body.userId : undefined,
             displayName: typeof req.body?.displayName === 'string' ? req.body.displayName : undefined,
             language: typeof req.body?.language === 'string' ? req.body.language : undefined,
             voice: typeof req.body?.voice === 'string' ? req.body.voice : undefined,
         });
+
+        if (config.skipConvoAiJoinOnCreate) {
+            return res.status(201).json({
+                success: true,
+                message: 'Agora RTC session created without ConvoAI agent join (local debug mode).',
+                data: created,
+            });
+        }
+
         const session = await agoraLiveService.joinAgent(created.sessionId);
 
         return res.status(201).json({

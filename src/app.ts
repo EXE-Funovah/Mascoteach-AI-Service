@@ -47,6 +47,7 @@ app.listen(port, () => {
     console.log(`Health Check: GET /api/v1/ai/health`);
     console.log(`Agora Native ConvoAI Health: GET /api/v1/mascot-live/health`);
     console.log(`Agora Native ConvoAI Session: POST /api/v1/mascot-live/session`);
+    console.log(`Agora skip join on create: ${agoraLive.skipConvoAiJoinOnCreate ? 'yes (local RTC-only mode)' : 'no'}`);
     console.log(`Agora RTC ready: ${agoraLive.rtcReady ? 'yes' : `no (${agoraLive.missingRtcFields.join(', ') || 'unknown'})`}`);
     console.log(`Agora lifecycle ready: ${agoraLive.lifecycleApiReady ? 'yes' : `no (${agoraLive.missingLifecycleFields.join(', ') || 'unknown'})`}`);
     console.log(`Agora native ConvoAI ready: ${agoraLive.convoAiReady ? 'yes' : `no (${agoraLive.missingConvoAiFields.join(', ') || 'unknown'})`}`);

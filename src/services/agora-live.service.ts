@@ -19,6 +19,7 @@ export class AgoraLiveConfigError extends Error {
 
 export class AgoraLiveService {
     private readonly sessions = new Map<string, AgoraLiveSession>();
+    private readonly agentRtcTokens = new Map<string, string | null>();
 
     constructor(private readonly config: AgoraLiveRuntimeConfig) {}
 
@@ -27,6 +28,7 @@ export class AgoraLiveService {
             provider: 'agora',
             engine: this.config.engine,
             configured: this.config.isConfigured,
+            skipConvoAiJoinOnCreate: this.config.skipConvoAiJoinOnCreate,
             rtcReady: this.config.rtcReady,
             lifecycleApiReady: this.config.lifecycleApiReady,
             convoAiReady: this.config.convoAiReady,
@@ -51,6 +53,7 @@ export class AgoraLiveService {
         const agentRtcUid = this.buildRtcUidExcluding(uid);
         const expiresAt = new Date(now.getTime() + this.config.tokenExpirySeconds * 1000).toISOString();
         const token = this.buildRtcToken(channelName, uid);
+        const agentToken = this.buildRtcToken(channelName, agentRtcUid);
 
         const session: AgoraLiveSession = {
             provider: 'agora',
@@ -72,7 +75,7 @@ export class AgoraLiveService {
             agent: {
                 engine: this.config.engine,
                 agentRtcUid: String(agentRtcUid),
-                remoteRtcUids: [String(uid)],
+                remoteRtcUids: ['*'],
                 agentId: null,
                 status: 'pending_backend_agent_start',
                 transport: 'agora_rtc',
@@ -89,6 +92,7 @@ export class AgoraLiveService {
         };
 
         this.sessions.set(sessionId, session);
+        this.agentRtcTokens.set(sessionId, agentToken);
         return session;
     }
 
@@ -102,7 +106,7 @@ export class AgoraLiveService {
             throw new AgoraLiveConfigError(`Agora live session not found: ${sessionId}`);
         }
 
-        if (!this.config.customerId || !this.config.customerSecret || !this.config.appId) {
+        if (!this.config.appId || !this.config.pipelineId) {
             throw new AgoraLiveConfigError(
                 `Agora native ConvoAI lifecycle is not configured. Missing: ${this.config.missingLifecycleFields.join(', ') || 'unknown fields'}`,
             );
@@ -110,12 +114,16 @@ export class AgoraLiveService {
 
         const joinAttemptedAt = new Date().toISOString();
         const joinUrl = `${this.config.convoAiBaseUrl.replace(/\/+$/, '')}/projects/${this.config.appId}/join`;
-        const payload = this.buildJoinPayload(existing);
+        const agentToken = this.agentRtcTokens.get(sessionId);
+        if (!agentToken) {
+            throw new AgoraLiveConfigError('Agora agent RTC token could not be generated for the join request.');
+        }
+        const payload = this.buildJoinPayload(existing, agentToken);
 
         const response = await fetch(joinUrl, {
             method: 'POST',
             headers: {
-                Authorization: this.buildBasicAuthorization(),
+                Authorization: this.buildAgoraAuthorization(agentToken),
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(payload),
@@ -162,14 +170,17 @@ export class AgoraLiveService {
             throw new AgoraLiveConfigError(`Agora live session not found: ${sessionId}`);
         }
 
-        if (existing.agent.agentId && this.config.customerId && this.config.customerSecret && this.config.appId) {
+        if (existing.agent.agentId && this.config.appId) {
             const leaveUrl =
                 `${this.config.convoAiBaseUrl.replace(/\/+$/, '')}/projects/${this.config.appId}/agents/${existing.agent.agentId}/leave`;
+            const agentToken = this.agentRtcTokens.get(sessionId);
 
             const response = await fetch(leaveUrl, {
                 method: 'POST',
                 headers: {
-                    Authorization: this.buildBasicAuthorization(),
+                    Authorization: agentToken
+                        ? this.buildAgoraAuthorization(agentToken)
+                        : this.buildBasicAuthorization(),
                     'Content-Type': 'application/json',
                 },
             });
@@ -203,6 +214,7 @@ export class AgoraLiveService {
         };
 
         this.sessions.set(sessionId, ended);
+        this.agentRtcTokens.delete(sessionId);
         return ended;
     }
 
@@ -242,33 +254,70 @@ export class AgoraLiveService {
         );
     }
 
-    private buildJoinPayload(session: AgoraLiveSession): Record<string, unknown> {
-        const payload: Record<string, unknown> = {};
-
-        payload.channel_name = session.rtc.channelName;
-        payload.token = session.rtc.token;
-        payload.enable_string_uid = false;
-        payload.agent_rtc_uid = session.agent.agentRtcUid;
-        payload.remote_rtc_uids = session.agent.remoteRtcUids;
-        payload.idle_timeout = this.config.idleTimeoutSeconds;
-        payload.greeting_message = this.config.greetingMessage;
-        payload.parameters = {
-            audio_scenario: 'chorus',
+    private buildJoinPayload(session: AgoraLiveSession, agentToken: string): Record<string, unknown> {
+        return {
+            name: session.rtc.channelName,
+            pipeline_id: this.config.pipelineId,
+            properties: {
+                asr: {
+                    vendor: this.config.asrVendor,
+                    language: this.config.asrLanguage,
+                    params: {
+                        url: this.config.asrUrl,
+                        model: this.config.asrModel,
+                        keyterm: '',
+                        language: this.config.asrLanguage,
+                    },
+                },
+                llm: {
+                    url: this.config.llmUrl,
+                    params: {
+                        model: this.config.llmModel,
+                    },
+                    vendor: this.config.llmVendor,
+                    failure_message: this.config.failureMessage,
+                    system_messages: [
+                        {
+                            role: 'system',
+                            content: this.config.systemPrompt,
+                        },
+                    ],
+                    greeting_message: this.config.greetingMessage,
+                },
+                tts: {
+                    vendor: this.config.ttsVendor,
+                    params: {
+                        url: this.config.ttsUrl,
+                        model: this.config.ttsModel,
+                        voice_setting: {
+                            voice_id: this.config.ttsVoiceId,
+                        },
+                    },
+                },
+                parameters: {
+                    silence_config: {
+                        action: 'think',
+                        content: 'politely ask if the user is still online',
+                        timeout_ms: 10000,
+                    },
+                },
+                idle_timeout: this.config.idleTimeoutSeconds,
+                turn_detection: null,
+                advanced_features: {
+                    enable_rtm: true,
+                    enable_sal: false,
+                },
+                channel: session.rtc.channelName,
+                agent_rtc_uid: session.agent.agentRtcUid,
+                remote_rtc_uids: session.agent.remoteRtcUids,
+                token: agentToken,
+                enable_string_uid: false,
+            },
         };
-        payload.turn_detection = {
-            type: 'agora_vad',
-            interrupt_mode: 'interrupt',
-            interrupt_duration_ms: 600,
-            threshold: 0.5,
-            silence_duration_ms: 1200,
-            prefix_padding_ms: 1500,
-        };
+    }
 
-        if (this.config.pipelineId) {
-            payload.pipeline_id = this.config.pipelineId;
-        }
-
-        return payload;
+    private buildAgoraAuthorization(token: string): string {
+        return `agora token=${token}`;
     }
 
     private buildBasicAuthorization(): string {
