@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import {
-    agoraLiveHealthCheck,
-    createAgoraLiveSession,
-    endAgoraLiveSession,
-    getAgoraLiveSession,
+    createMascotLiveSession,
+    endMascotLiveSession,
+    getMascotLiveSession,
+    mascotLiveHealthCheck,
 } from '../controllers/mascot-live.controller';
 
 const router = Router();
 
-router.get('/health', agoraLiveHealthCheck);
-router.post('/session', createAgoraLiveSession);
-router.get('/session/:sessionId', getAgoraLiveSession);
-router.post('/session/:sessionId/end', endAgoraLiveSession);
+router.get('/health', mascotLiveHealthCheck);
+router.post('/session', createMascotLiveSession);
+router.get('/session/:sessionId', getMascotLiveSession);
+router.post('/session/:sessionId/end', endMascotLiveSession);
 
 export default router;

@@ -96,21 +96,23 @@ test('quiz generation request trims repetitive and oversized document text befor
     delete require.cache[openAIServicePath];
 });
 
-test('Agora is the only mascot live path; no direct model WebSocket relay remains', () => {
+test('mascot live now uses OpenAI Realtime instead of Agora', () => {
     const root = path.resolve(__dirname, '..');
     const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     const appSource = fs.readFileSync(path.join(root, 'src/app.ts'), 'utf8');
     const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
     const mascotTypes = fs.readFileSync(path.join(root, 'src/types/mascot-live.types.ts'), 'utf8');
 
-    assert.equal(fs.existsSync(path.join(root, 'src/services/mascot-live.service.ts')), false);
-    assert.equal(fs.existsSync(path.join(root, 'src/websocket/mascot-ws.handler.ts')), false);
-    assert.equal(packageJson.dependencies.ws, undefined);
-    assert.equal(packageJson.devDependencies['@types/ws'], undefined);
-    assert.equal(appSource.includes('setupMascotWebSocket'), false);
-    assert.equal(appSource.includes('/ws/mascot-live'), false);
-    assert.equal(envExample.includes('OPENAI_REALTIME_MODEL'), false);
-    assert.equal(mascotTypes.includes("'openai'"), false);
+    assert.equal(fs.existsSync(path.join(root, 'src/services/openai-live.service.ts')), true);
+    assert.equal(fs.existsSync(path.join(root, 'src/services/agora-live.service.ts')), false);
+    assert.equal(fs.existsSync(path.join(root, 'src/config/agora-live.config.ts')), false);
+    assert.equal(packageJson.dependencies['agora-token'], undefined);
+    assert.equal(appSource.includes('OpenAI Realtime Session'), true);
+    assert.equal(appSource.includes('Agora'), false);
+    assert.equal(envExample.includes('OPENAI_REALTIME_MODEL'), true);
+    assert.equal(envExample.includes('AGORA_APP_ID'), false);
+    assert.equal(mascotTypes.includes("'openai'"), true);
+    assert.equal(mascotTypes.includes("'agora'"), false);
 });
 
 test('Gemini dependencies and source references are removed', () => {
@@ -128,6 +130,7 @@ test('Gemini dependencies and source references are removed', () => {
         'src/controllers/mcq.controller.ts',
         'src/services/file-converter.service.ts',
         'src/types/mascot-live.types.ts',
+        'src/controllers/mascot-live.controller.ts',
     ];
 
     for (const relativePath of sourceFiles) {
@@ -136,4 +139,34 @@ test('Gemini dependencies and source references are removed', () => {
     }
 
     assert.equal(fs.existsSync(path.join(root, 'src/services/gemini.service.ts')), false);
+});
+
+test('default Sumadi live prompt is locked in for Vietnamese audio tutoring', () => {
+    const promptModulePath = require.resolve('../dist/config/mascot-live.prompt.js');
+    const configModulePath = require.resolve('../dist/config/mascot-live.config.js');
+    const originalPrompt = process.env.OPENAI_REALTIME_SYSTEM_PROMPT;
+
+    delete require.cache[promptModulePath];
+    delete require.cache[configModulePath];
+    delete process.env.OPENAI_REALTIME_SYSTEM_PROMPT;
+
+    const { DEFAULT_SUMADI_AUDIO_PROMPT } = require(promptModulePath);
+    const { getMascotLiveConfig } = require(configModulePath);
+
+    assert.match(DEFAULT_SUMADI_AUDIO_PROMPT, /Your name is Sumadi\./);
+    assert.match(DEFAULT_SUMADI_AUDIO_PROMPT, /You MUST always respond in Vietnamese\./);
+    assert.match(DEFAULT_SUMADI_AUDIO_PROMPT, /Never state the final answer\./);
+    assert.match(DEFAULT_SUMADI_AUDIO_PROMPT, /one continuous response/);
+
+    const config = getMascotLiveConfig();
+    assert.equal(config.systemPrompt, DEFAULT_SUMADI_AUDIO_PROMPT);
+
+    if (originalPrompt === undefined) {
+        delete process.env.OPENAI_REALTIME_SYSTEM_PROMPT;
+    } else {
+        process.env.OPENAI_REALTIME_SYSTEM_PROMPT = originalPrompt;
+    }
+
+    delete require.cache[promptModulePath];
+    delete require.cache[configModulePath];
 });

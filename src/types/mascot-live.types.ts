@@ -1,45 +1,22 @@
-export type MascotLiveProvider = 'agora';
-export type AgoraLiveEngine = 'native_agora_convoai';
+export type MascotLiveProvider = 'openai';
+export type MascotLiveEngine = 'openai_realtime_webrtc';
 
 export type MascotLiveSessionStatus = 'created' | 'active' | 'ended' | 'error';
 
-export interface AgoraLiveRuntimeConfig {
-    engine: AgoraLiveEngine;
-    appId?: string;
-    appCertificate?: string;
-    projectId?: string;
-    customerId?: string;
-    customerSecret?: string;
-    convoAiBaseUrl: string;
-    pipelineId?: string;
-    idleTimeoutSeconds: number;
-    greetingMessage: string;
-    tokenExpirySeconds: number;
-    defaultChannelPrefix: string;
+export interface MascotLiveRuntimeConfig {
+    provider: MascotLiveProvider;
+    engine: MascotLiveEngine;
+    apiKey?: string;
+    apiBaseUrl: string;
+    realtimeModel: string;
     defaultLanguage: string;
     defaultVoice: string;
     systemPrompt: string;
-    failureMessage: string;
-    asrVendor: string;
-    asrLanguage: string;
-    asrModel: string;
-    asrUrl: string;
-    llmVendor: string;
-    llmModel: string;
-    llmUrl: string;
-    ttsVendor: string;
-    ttsModel: string;
-    ttsUrl: string;
-    ttsVoiceId: string;
-    skipConvoAiJoinOnCreate: boolean;
+    reasoningEffort: 'low' | 'medium' | 'high';
+    maxOutputTokens: number;
+    sessionTtlSeconds: number;
     isConfigured: boolean;
     missingFields: string[];
-    rtcReady: boolean;
-    lifecycleApiReady: boolean;
-    convoAiReady: boolean;
-    missingRtcFields: string[];
-    missingLifecycleFields: string[];
-    missingConvoAiFields: string[];
 }
 
 export interface CreateMascotLiveSessionInput {
@@ -49,31 +26,21 @@ export interface CreateMascotLiveSessionInput {
     voice?: string;
 }
 
-export interface AgoraRtcConnectionInfo {
-    appId: string;
-    channelName: string;
-    uid: number;
-    token: string | null;
-    tokenExpiresAt: string | null;
+export interface OpenAiRealtimeClientSecret {
+    value: string;
+    expiresAt: string | null;
 }
 
-export interface AgoraAgentSessionInfo {
-    engine: AgoraLiveEngine;
-    agentRtcUid: string;
-    remoteRtcUids: string[];
-    agentId: string | null;
-    status: 'pending_backend_agent_start' | 'active' | 'ended';
-    transport: 'agora_rtc';
-    lifecycleApiConfigured: boolean;
-    joinAttemptedAt?: string | null;
-    lastError?: string | null;
-    rawJoinResponse?: unknown;
-    notes: string[];
+export interface MascotLiveConnectionInfo {
+    apiBaseUrl: string;
+    callEndpoint: string;
+    dataChannelLabel: string;
+    transport: 'webrtc';
 }
 
-export interface AgoraLiveSession {
-    provider: 'agora';
-    engine: AgoraLiveEngine;
+export interface MascotLiveSession {
+    provider: MascotLiveProvider;
+    engine: MascotLiveEngine;
     sessionId: string;
     status: MascotLiveSessionStatus;
     createdAt: string;
@@ -81,20 +48,19 @@ export interface AgoraLiveSession {
     displayName: string;
     language: string;
     voice: string;
-    rtc: AgoraRtcConnectionInfo;
-    agent: AgoraAgentSessionInfo;
+    model: string;
+    clientSecret: OpenAiRealtimeClientSecret;
+    connection: MascotLiveConnectionInfo;
+    notes: string[];
 }
 
-export interface AgoraLiveReadiness {
-    provider: 'agora';
-    engine: AgoraLiveEngine;
+export interface MascotLiveReadiness {
+    provider: MascotLiveProvider;
+    engine: MascotLiveEngine;
     configured: boolean;
-    skipConvoAiJoinOnCreate: boolean;
-    rtcReady: boolean;
-    lifecycleApiReady: boolean;
-    convoAiReady: boolean;
+    apiBaseUrl: string;
+    model: string;
+    language: string;
+    voice: string;
     missingFields: string[];
-    missingRtcFields: string[];
-    missingLifecycleFields: string[];
-    missingConvoAiFields: string[];
 }

@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import mcqRoutes from './routes/mcq.route';
 import aiRoutes from './routes/ai.routes';
 import mascotLiveRoutes from './routes/mascot-live.routes';
-import { getAgoraLiveReadiness } from './config/agora-live.config';
+import { getMascotLiveReadiness } from './config/mascot-live.config';
 
 dotenv.config();
 
@@ -34,22 +34,20 @@ app.use('/api/v1/mcq', mcqRoutes);
 // Route cho AI Integration với Backend
 app.use('/api/v1/ai', aiRoutes);
 
-// Route cho mascot live orchestration via Agora
+// Route cho mascot live orchestration via OpenAI Realtime
 app.use('/api/v1/mascot-live', mascotLiveRoutes);
 
 app.listen(port, () => {
-    const agoraLive = getAgoraLiveReadiness();
+    const mascotLive = getMascotLiveReadiness();
 
     console.log(`========================================`);
     console.log(`AI Server đang chạy tại: http://localhost:${port}`);
     console.log(`OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Đã thiết lập' : 'Chưa thiết lập'}`);
     console.log(`AI Endpoint: POST /api/v1/ai/generate-for-backend`);
     console.log(`Health Check: GET /api/v1/ai/health`);
-    console.log(`Agora Native ConvoAI Health: GET /api/v1/mascot-live/health`);
-    console.log(`Agora Native ConvoAI Session: POST /api/v1/mascot-live/session`);
-    console.log(`Agora skip join on create: ${agoraLive.skipConvoAiJoinOnCreate ? 'yes (local RTC-only mode)' : 'no'}`);
-    console.log(`Agora RTC ready: ${agoraLive.rtcReady ? 'yes' : `no (${agoraLive.missingRtcFields.join(', ') || 'unknown'})`}`);
-    console.log(`Agora lifecycle ready: ${agoraLive.lifecycleApiReady ? 'yes' : `no (${agoraLive.missingLifecycleFields.join(', ') || 'unknown'})`}`);
-    console.log(`Agora native ConvoAI ready: ${agoraLive.convoAiReady ? 'yes' : `no (${agoraLive.missingConvoAiFields.join(', ') || 'unknown'})`}`);
+    console.log(`OpenAI Realtime Health: GET /api/v1/mascot-live/health`);
+    console.log(`OpenAI Realtime Session: POST /api/v1/mascot-live/session`);
+    console.log(`OpenAI Realtime model: ${mascotLive.model}`);
+    console.log(`OpenAI Realtime ready: ${mascotLive.configured ? 'yes' : `no (${mascotLive.missingFields.join(', ') || 'unknown'})`}`);
     console.log(`========================================`);
 });
