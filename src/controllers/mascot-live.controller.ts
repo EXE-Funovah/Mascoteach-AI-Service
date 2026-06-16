@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { getAgoraLiveConfig, getAgoraLiveReadiness } from '../config/agora-live.config';
-import { AgoraLiveConfigError, AgoraLiveService } from '../services/agora-live.service';
+import { getMascotLiveConfig, getMascotLiveReadiness } from '../config/mascot-live.config';
+import { OpenAiLiveConfigError, OpenAiLiveService } from '../services/openai-live.service';
 
-const agoraLiveService = new AgoraLiveService(getAgoraLiveConfig());
+const liveService = new OpenAiLiveService(getMascotLiveConfig());
 
 const getSingleRouteParam = (value: string | string[] | undefined): string => {
     if (typeof value === 'string') {
@@ -16,33 +16,32 @@ const getSingleRouteParam = (value: string | string[] | undefined): string => {
     return '';
 };
 
-export const createAgoraLiveSession = async (req: Request, res: Response): Promise<Response> => {
+export const createMascotLiveSession = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const created = agoraLiveService.createSession({
+        const created = await liveService.createSession({
             userId: typeof req.body?.userId === 'string' ? req.body.userId : undefined,
             displayName: typeof req.body?.displayName === 'string' ? req.body.displayName : undefined,
             language: typeof req.body?.language === 'string' ? req.body.language : undefined,
             voice: typeof req.body?.voice === 'string' ? req.body.voice : undefined,
         });
-        const session = await agoraLiveService.joinAgent(created.sessionId);
 
         return res.status(201).json({
             success: true,
-            message: 'Agora native ConvoAI session created.',
-            data: session,
+            message: 'OpenAI Realtime session created.',
+            data: created,
         });
     } catch (error: unknown) {
-        if (error instanceof AgoraLiveConfigError) {
+        if (error instanceof OpenAiLiveConfigError) {
             return res.status(502).json({
                 success: false,
                 message: error.message,
                 data: {
-                    readiness: getAgoraLiveReadiness(),
+                    readiness: getMascotLiveReadiness(),
                 },
             });
         }
 
-        const message = error instanceof Error ? error.message : 'Unknown Agora live error';
+        const message = error instanceof Error ? error.message : 'Unknown mascot live error';
         return res.status(500).json({
             success: false,
             message,
@@ -51,35 +50,35 @@ export const createAgoraLiveSession = async (req: Request, res: Response): Promi
     }
 };
 
-export const getAgoraLiveSession = async (req: Request, res: Response): Promise<Response> => {
-    const session = agoraLiveService.getSession(getSingleRouteParam(req.params.sessionId));
+export const getMascotLiveSession = async (req: Request, res: Response): Promise<Response> => {
+    const session = liveService.getSession(getSingleRouteParam(req.params.sessionId));
 
     if (!session) {
         return res.status(404).json({
             success: false,
-            message: 'Agora live session not found.',
+            message: 'Mascot live session not found.',
             data: null,
         });
     }
 
     return res.status(200).json({
         success: true,
-        message: 'Agora native ConvoAI session fetched.',
+        message: 'OpenAI Realtime session fetched.',
         data: session,
     });
 };
 
-export const endAgoraLiveSession = async (req: Request, res: Response): Promise<Response> => {
+export const endMascotLiveSession = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const session = await agoraLiveService.endSession(getSingleRouteParam(req.params.sessionId));
+        const session = await liveService.endSession(getSingleRouteParam(req.params.sessionId));
 
         return res.status(200).json({
             success: true,
-            message: 'Agora native ConvoAI session ended.',
+            message: 'OpenAI Realtime session ended.',
             data: session,
         });
     } catch (error: unknown) {
-        if (error instanceof AgoraLiveConfigError) {
+        if (error instanceof OpenAiLiveConfigError) {
             return res.status(404).json({
                 success: false,
                 message: error.message,
@@ -87,7 +86,7 @@ export const endAgoraLiveSession = async (req: Request, res: Response): Promise<
             });
         }
 
-        const message = error instanceof Error ? error.message : 'Unknown Agora live error';
+        const message = error instanceof Error ? error.message : 'Unknown mascot live error';
         return res.status(500).json({
             success: false,
             message,
@@ -96,12 +95,12 @@ export const endAgoraLiveSession = async (req: Request, res: Response): Promise<
     }
 };
 
-export const agoraLiveHealthCheck = async (req: Request, res: Response): Promise<Response> => {
+export const mascotLiveHealthCheck = async (req: Request, res: Response): Promise<Response> => {
     return res.status(200).json({
         success: true,
-        message: 'Agora native ConvoAI readiness fetched.',
+        message: 'OpenAI Realtime readiness fetched.',
         data: {
-            readiness: getAgoraLiveReadiness(),
+            readiness: getMascotLiveReadiness(),
         },
     });
 };

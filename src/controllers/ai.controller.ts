@@ -4,7 +4,7 @@ import { downloadFromUrl } from '../services/download.service';
 import { extractFromZipIfNeeded } from '../services/unzip.service';
 import { convertForOpenAI } from '../services/file-converter.service';
 import { MCQItem, QuestionForBackend, OptionForBackend, BackendIntegrationResponse } from '../types/ai.types';
-import { getAgoraLiveReadiness } from '../config/agora-live.config';
+import { getMascotLiveReadiness } from '../config/mascot-live.config';
 import OpenAI from 'openai';
 
 
@@ -103,7 +103,7 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
  * POST /api/v1/ai/chat
  *
  * Lightweight text fallback for the mascot widget. The voice/live experience is
- * handled by /api/v1/mascot-live; this endpoint keeps the legacy chat fallback
+ * handled by /api/v1/mascot-live; this endpoint keeps the legacy text fallback
  * from returning 404 and gives the mascot a real AI response when audio is not
  * available.
  */
@@ -174,7 +174,7 @@ export const chat = async (req: Request, res: Response): Promise<any> => {
  * Endpoint để Backend kiểm tra AI Service có đang hoạt động không
  */
 export const healthCheck = async (req: Request, res: Response): Promise<any> => {
-    const agoraLive = getAgoraLiveReadiness();
+    const mascotLive = getMascotLiveReadiness();
 
     return res.status(200).json({
         success: true,
@@ -184,7 +184,7 @@ export const healthCheck = async (req: Request, res: Response): Promise<any> => 
             version: '1.0.0',
             timestamp: new Date().toISOString(),
             openaiApiKey: process.env.OPENAI_API_KEY ? 'configured' : 'missing',
-            agoraLive,
+            mascotLive,
         }
     });
 };

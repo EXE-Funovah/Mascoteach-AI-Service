@@ -7,6 +7,9 @@ import { MCQItem } from '../types/ai.types';
 dotenv.config();
 
 export const OPENAI_QUIZ_MODEL = process.env.OPENAI_QUIZ_MODEL || 'gpt-5-mini';
+const DEFAULT_MAX_DOCUMENT_CHARS = 20_000;
+const DEFAULT_MAX_DOCUMENT_LINES = 400;
+const OMITTED_CONTENT_MARKER = '\n...[nội dung đã được rút gọn để tiết kiệm token]...\n';
 
 export interface DifficultyDistribution {
     1: number;
@@ -21,6 +24,109 @@ export interface GenerateMCQOptions {
 }
 
 const DEFAULT_DISTRIBUTION: DifficultyDistribution = { 1: 40, 2: 40, 3: 20 };
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+    const parsed = Number.parseInt(value || '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeLine(line: string): string {
+    return line.replace(/\s+/g, ' ').trim();
+}
+
+function isLikelyBoilerplate(line: string, totalOccurrences: number): boolean {
+    if (/^(trang|page)\s+\d+(\s*\/\s*\d+)?$/i.test(line)) {
+        return true;
+    }
+
+    if (/^\d+(\s*\/\s*\d+)?$/.test(line)) {
+        return true;
+    }
+
+    if (totalOccurrences < 3) {
+        return false;
+    }
+
+    return line.length > 0 && line.length <= 120;
+}
+
+function trimTextWithMarker(text: string, maxChars: number): string {
+    if (text.length <= maxChars) {
+        return text;
+    }
+
+    const marker = OMITTED_CONTENT_MARKER.trim();
+    const separatorBudget = 2; // newlines around marker
+    const contentBudget = maxChars - marker.length - separatorBudget;
+    if (contentBudget <= 20) {
+        return text.slice(0, maxChars).trim();
+    }
+
+    const headChars = Math.max(1, Math.floor(contentBudget * 0.7));
+    const tailChars = Math.max(1, contentBudget - headChars);
+    const head = text.slice(0, headChars).trim();
+    const tail = text.slice(-tailChars).trim();
+    return [head, marker, tail].filter(Boolean).join('\n');
+}
+
+export function prepareDocumentTextForPrompt(rawText: string): string {
+    const maxDocumentChars = parsePositiveInteger(process.env.OPENAI_MAX_DOCUMENT_CHARS, DEFAULT_MAX_DOCUMENT_CHARS);
+    const maxDocumentLines = parsePositiveInteger(process.env.OPENAI_MAX_DOCUMENT_LINES, DEFAULT_MAX_DOCUMENT_LINES);
+
+    const normalizedText = rawText.replace(/\r\n/g, '\n').replace(/\u0000/g, '');
+    const lines = normalizedText.split('\n');
+    const normalizedCounts = new Map<string, number>();
+
+    for (const line of lines) {
+        const normalized = normalizeLine(line);
+        if (!normalized) {
+            continue;
+        }
+
+        normalizedCounts.set(normalized, (normalizedCounts.get(normalized) || 0) + 1);
+    }
+
+    const cleanedLines: string[] = [];
+    let previousWasBlank = false;
+
+    for (const line of lines) {
+        const trimmedRight = line.replace(/[ \t]+$/g, '');
+        const normalized = normalizeLine(trimmedRight);
+
+        if (!normalized) {
+            if (!previousWasBlank && cleanedLines.length > 0) {
+                cleanedLines.push('');
+            }
+            previousWasBlank = true;
+            continue;
+        }
+
+        previousWasBlank = false;
+
+        if (isLikelyBoilerplate(normalized, normalizedCounts.get(normalized) || 0)) {
+            continue;
+        }
+
+        cleanedLines.push(trimmedRight);
+    }
+
+    const compactText = cleanedLines.join('\n').trim();
+    if (!compactText) {
+        return normalizedText.trim();
+    }
+
+    let preparedText = compactText;
+
+    if (cleanedLines.length > maxDocumentLines) {
+        const headLineCount = Math.max(1, Math.floor(maxDocumentLines * 0.7));
+        const tailLineCount = Math.max(1, maxDocumentLines - headLineCount);
+        const head = cleanedLines.slice(0, headLineCount).join('\n').trim();
+        const tail = cleanedLines.slice(-tailLineCount).join('\n').trim();
+        preparedText = [head, OMITTED_CONTENT_MARKER.trim(), tail].filter(Boolean).join('\n');
+    }
+
+    return trimTextWithMarker(preparedText, maxDocumentChars);
+}
 
 function computeQuestionCounts(
     total: number,
@@ -132,7 +238,7 @@ export function buildQuizResponseRequest(
     ];
 
     if (typeof documentContent === 'string') {
-        content.push({ type: 'input_text', text: `\n\nTÀI LIỆU:\n${documentContent}` });
+        content.push({ type: 'input_text', text: `\n\nTÀI LIỆU:\n${prepareDocumentTextForPrompt(documentContent)}` });
     } else {
         content.push(documentContent);
     }
