@@ -6,6 +6,12 @@ export interface MCQItem {
     explanation: string;
 }
 
+export interface FlashcardItem {
+    front: string;
+    back: string;
+    difficulty: 'Dễ' | 'Trung bình' | 'Khó';
+}
+
 /**
  * Cấu trúc Option chuẩn hóa - khớp với bảng Options trong DB
  * Map sang AIOptionItem trong Backend DTO

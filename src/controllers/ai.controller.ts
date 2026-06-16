@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import { generateMCQFromFile, OPENAI_QUIZ_MODEL } from '../services/openai.service';
+import { generateFlashcardsFromFile, generateMCQFromFile, OPENAI_QUIZ_MODEL } from '../services/openai.service';
 import { downloadFromUrl } from '../services/download.service';
 import { extractFromZipIfNeeded } from '../services/unzip.service';
 import { convertForOpenAI } from '../services/file-converter.service';
-import { MCQItem, QuestionForBackend, OptionForBackend, BackendIntegrationResponse } from '../types/ai.types';
+import { FlashcardItem, MCQItem, QuestionForBackend, OptionForBackend, BackendIntegrationResponse } from '../types/ai.types';
 import { getMascotLiveReadiness } from '../config/mascot-live.config';
 import OpenAI from 'openai';
 
@@ -94,6 +94,82 @@ export const generateForBackend = async (req: Request, res: Response): Promise<a
         return res.status(500).json({
             success: false,
             message: error.message || 'Đã xảy ra lỗi trong quá trình tạo câu hỏi bằng AI.',
+            data: null
+        });
+    }
+};
+
+export const generateFlashcardsForBackend = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const { fileUrl } = req.body;
+        if (!fileUrl) {
+            return res.status(400).json({
+                success: false,
+                message: 'Vui lòng cung cấp fileUrl (S3 URL của tài liệu).',
+                data: null
+            });
+        }
+
+        console.log(`[AI → Backend] Đang download file từ URL để tạo flashcard: ${fileUrl}`);
+        const downloaded = await downloadFromUrl(fileUrl);
+        const unzipped = await extractFromZipIfNeeded(downloaded.filePath, downloaded.mimeType, downloaded.fileName);
+        const { filePath: rawFilePath, mimeType: rawMimeType, fileName: originalName } = unzipped;
+
+        const converted = await convertForOpenAI(rawFilePath, rawMimeType, originalName);
+        const { filePath, mimeType } = converted;
+        if (converted.wasConverted) {
+            console.log(`[AI → Backend] Đã chuyển đổi file: ${rawMimeType} → ${mimeType}`);
+        }
+
+        const documentId = req.body.documentId ? parseInt(req.body.documentId) : undefined;
+        const quizTitle = req.body.quizTitle || `Flashcards từ ${originalName}`;
+        const requestedCount = req.body.numberOfCards ?? req.body.numberOfQuestions;
+        const numberOfCards = requestedCount ? parseInt(requestedCount) : 5;
+        const difficultyDistribution = req.body.difficultyDistribution || undefined;
+        const language = req.body.language || 'vi';
+
+        console.log(`[AI → Backend] Đang tạo flashcard từ file: ${originalName}`);
+        console.log(`[AI → Backend] DocumentId: ${documentId || 'N/A'}, Số thẻ: ${numberOfCards}, Ngôn ngữ: ${language}`);
+
+        const rawFlashcards: FlashcardItem[] = await generateFlashcardsFromFile(filePath, mimeType, {
+            numberOfCards,
+            difficultyDistribution,
+            language,
+        });
+
+        const questionsForBackend: QuestionForBackend[] = rawFlashcards.map((item) => ({
+            questionText: item.front,
+            questionType: 'Flashcard',
+            options: [
+                {
+                    optionText: item.back,
+                    isCorrect: true,
+                },
+            ],
+        }));
+
+        const response: BackendIntegrationResponse = {
+            success: true,
+            message: `Tạo thành công ${questionsForBackend.length} flashcard!`,
+            data: {
+                documentId,
+                quizTitle,
+                questions: questionsForBackend
+            },
+            metadata: {
+                generatedAt: new Date().toISOString(),
+                questionCount: questionsForBackend.length,
+                model: OPENAI_QUIZ_MODEL
+            }
+        };
+
+        console.log(`[AI → Backend] Đã tạo ${questionsForBackend.length} flashcard thành công!`);
+        return res.status(200).json(response);
+    } catch (error: any) {
+        console.error('[AI → Backend] Lỗi tạo flashcard:', error.message);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Đã xảy ra lỗi trong quá trình tạo flashcard bằng AI.',
             data: null
         });
     }

@@ -29,6 +29,9 @@ test('quiz generation request uses OpenAI Responses structured outputs', () => {
     assert.match(prompt, /độ dài, mức độ chi tiết và phong cách ngữ pháp tương đương/);
     assert.match(prompt, /Đáp án đúng không được nổi bật/);
     assert.match(prompt, /hiểu lầm phổ biến của học sinh/);
+    assert.match(prompt, /Tuyệt đối không mở đầu hoặc phụ thuộc vào các cụm mơ hồ/);
+    assert.match(prompt, /Câu hỏi phải tự đủ ngữ cảnh/);
+    assert.doesNotMatch(prompt, /^Theo tài liệu/m);
 
     if (originalModel === undefined) {
         delete process.env.OPENAI_QUIZ_MODEL;
@@ -36,6 +39,37 @@ test('quiz generation request uses OpenAI Responses structured outputs', () => {
         process.env.OPENAI_QUIZ_MODEL = originalModel;
     }
     delete require.cache[openAIServicePath];
+});
+
+test('flashcard generation request uses structured outputs and self-contained prompt rules', () => {
+    const openAIServicePath = require.resolve('../dist/services/openai.service.js');
+
+    delete require.cache[openAIServicePath];
+    const { buildFlashcardResponseRequest, OPENAI_QUIZ_MODEL } = require(openAIServicePath);
+
+    const request = buildFlashcardResponseRequest('Nội dung tài liệu', {
+        numberOfCards: 4,
+        language: 'vi',
+    });
+
+    assert.equal(request.model, OPENAI_QUIZ_MODEL);
+    assert.equal(request.reasoning.effort, 'medium');
+    assert.equal(request.text.format.type, 'json_schema');
+    assert.equal(request.text.format.name, 'flashcard_set');
+    assert.equal(request.text.format.strict, true);
+    assert.equal(request.text.format.schema.properties.flashcards.minItems, 4);
+    assert.equal(request.text.format.schema.properties.flashcards.maxItems, 4);
+
+    const itemSchema = request.text.format.schema.properties.flashcards.items;
+    assert.deepEqual(itemSchema.required, ['front', 'back', 'difficulty']);
+    assert.equal(itemSchema.properties.front.type, 'string');
+    assert.equal(itemSchema.properties.back.type, 'string');
+
+    const prompt = request.input[0].content[0].text;
+    assert.match(prompt, /front phải tự đủ ngữ cảnh/);
+    assert.match(prompt, /không tiết lộ trực tiếp back/);
+    assert.match(prompt, /Tuyệt đối không mở đầu hoặc phụ thuộc vào các cụm mơ hồ/);
+    assert.doesNotMatch(prompt, /^Theo tài liệu/m);
 });
 
 test('quiz generation request trims repetitive and oversized document text before sending to OpenAI', () => {
