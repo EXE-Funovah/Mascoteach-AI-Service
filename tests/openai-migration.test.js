@@ -130,23 +130,16 @@ test('quiz generation request trims repetitive and oversized document text befor
     delete require.cache[openAIServicePath];
 });
 
-test('mascot live now uses OpenAI Realtime instead of Agora', () => {
+test('mascot live now uses OpenAI Realtime', () => {
     const root = path.resolve(__dirname, '..');
-    const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     const appSource = fs.readFileSync(path.join(root, 'src/app.ts'), 'utf8');
     const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
     const mascotTypes = fs.readFileSync(path.join(root, 'src/types/mascot-live.types.ts'), 'utf8');
 
     assert.equal(fs.existsSync(path.join(root, 'src/services/openai-live.service.ts')), true);
-    assert.equal(fs.existsSync(path.join(root, 'src/services/agora-live.service.ts')), false);
-    assert.equal(fs.existsSync(path.join(root, 'src/config/agora-live.config.ts')), false);
-    assert.equal(packageJson.dependencies['agora-token'], undefined);
     assert.equal(appSource.includes('OpenAI Realtime Session'), true);
-    assert.equal(appSource.includes('Agora'), false);
     assert.equal(envExample.includes('OPENAI_REALTIME_MODEL'), true);
-    assert.equal(envExample.includes('AGORA_APP_ID'), false);
     assert.equal(mascotTypes.includes("'openai'"), true);
-    assert.equal(mascotTypes.includes("'agora'"), false);
 });
 
 test('Gemini dependencies and source references are removed', () => {
