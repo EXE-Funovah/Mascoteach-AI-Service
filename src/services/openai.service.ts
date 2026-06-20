@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
-import { MCQItem } from '../types/ai.types';
+import { FlashcardItem, MCQItem } from '../types/ai.types';
 
 dotenv.config();
 
@@ -19,6 +19,12 @@ export interface DifficultyDistribution {
 
 export interface GenerateMCQOptions {
     numberOfQuestions?: number;
+    difficultyDistribution?: DifficultyDistribution;
+    language?: 'vi' | 'en';
+}
+
+export interface GenerateFlashcardOptions {
+    numberOfCards?: number;
     difficultyDistribution?: DifficultyDistribution;
     language?: 'vi' | 'en';
 }
@@ -163,20 +169,22 @@ function buildPrompt(
         ? 'Write every question, option, and explanation in English.'
         : 'Viết toàn bộ câu hỏi, đáp án và giải thích bằng tiếng Việt.';
 
-    return `Bạn là chuyên gia giáo dục. Hãy tạo chính xác ${numberOfQuestions} câu hỏi trắc nghiệm từ tài liệu được cung cấp.
+    return `Bạn là chuyên gia thiết kế đánh giá học tập. Hãy tạo chính xác ${numberOfQuestions} câu hỏi trắc nghiệm từ nội dung học tập được cung cấp.
 
 Yêu cầu:
 - ${languageInstruction}
 - Phân bổ độ khó chính xác: ${counts.level1} câu Dễ, ${counts.level2} câu Trung bình, ${counts.level3} câu Khó.
 - Mỗi câu có đúng 4 lựa chọn và chỉ 1 đáp án đúng.
 - correctAnswer phải giống nguyên văn một phần tử trong options.
+- Câu hỏi phải tự đủ ngữ cảnh: nêu rõ chủ thể, khái niệm, tình huống hoặc dữ kiện cần hỏi ngay trong câu.
+- Tuyệt đối không mở đầu hoặc phụ thuộc vào các cụm mơ hồ như "Theo tài liệu", "Dựa vào tài liệu", "Trong tài liệu", "Tài liệu cho biết", "ở trên", "hình trên", "bảng trên", "đoạn trên", "nội dung này".
+- Nếu câu hỏi cần dữ kiện từ hình, bảng hoặc biểu đồ, hãy viết lại dữ kiện cần thiết bằng chữ trong chính câu hỏi.
+- Không hỏi kiểu truy xuất vị trí hoặc nguồn tài liệu; hãy hỏi trực tiếp kiến thức, quan hệ nguyên nhân-kết quả, định nghĩa, điều kiện áp dụng hoặc hệ quả.
 - Các đáp án sai phải là phương án gây nhiễu hợp lý, cùng loại với đáp án đúng.
 - 4 lựa chọn phải có độ dài, mức độ chi tiết và phong cách ngữ pháp tương đương.
 - Không tạo đáp án sai quá ngắn, hài hước, vô lý, hoặc rõ ràng không liên quan.
 - Đáp án đúng không được nổi bật vì dài hơn, cụ thể hơn, hoặc trang trọng hơn các đáp án khác.
 - Các đáp án sai nên phản ánh hiểu lầm phổ biến của học sinh dựa trên nội dung tài liệu.
-- Mỗi câu hỏi phải tự chứa đủ ngữ cảnh để người học trả lời độc lập.
-- Không tham chiếu mơ hồ tới hình ảnh, biểu đồ hoặc bảng. Nếu cần dữ liệu, hãy mô tả dữ liệu cần thiết bằng chữ.
 - Chỉ sử dụng kiến thức trong tài liệu; tạo lựa chọn gây nhiễu hợp lý.
 - explanation giải thích ngắn gọn vì sao đáp án đúng.
 
@@ -184,8 +192,40 @@ Trước khi trả JSON, hãy tự kiểm tra thầm từng câu:
 1. Người học có thể đoán đáp án đúng chỉ nhờ độ dài hoặc phong cách lựa chọn không?
 2. Có đáp án sai nào rõ ràng không liên quan hoặc quá dễ loại không?
 3. Tất cả lựa chọn có đủ hợp lý nếu người học chưa nắm bài không?
+4. Câu hỏi có chứa cụm tham chiếu mơ hồ bị cấm không?
 
-Nếu có lựa chọn nào không đạt, hãy viết lại lựa chọn đó trước khi trả kết quả cuối cùng.`;
+Nếu câu hỏi hoặc lựa chọn nào không đạt, hãy viết lại trước khi trả kết quả cuối cùng.`;
+}
+
+function buildFlashcardPrompt(
+    numberOfCards: number,
+    distribution: DifficultyDistribution,
+    language: 'vi' | 'en',
+): string {
+    const counts = computeQuestionCounts(numberOfCards, distribution);
+    const languageInstruction = language === 'en'
+        ? 'Write every flashcard front and back in English.'
+        : 'Viết toàn bộ mặt trước và mặt sau flashcard bằng tiếng Việt.';
+
+    return `Bạn là chuyên gia thiết kế flashcard học tập. Hãy tạo chính xác ${numberOfCards} flashcard từ nội dung học tập được cung cấp.
+
+Yêu cầu:
+- ${languageInstruction}
+- Phân bổ độ khó chính xác: ${counts.level1} thẻ Dễ, ${counts.level2} thẻ Trung bình, ${counts.level3} thẻ Khó.
+- front là câu hỏi, thuật ngữ, tình huống ngắn hoặc yêu cầu gợi nhớ; front phải tự đủ ngữ cảnh và không tiết lộ trực tiếp back.
+- back là câu trả lời trực tiếp, ngắn gọn, đủ ý cốt lõi để người học tự kiểm tra.
+- Tuyệt đối không mở đầu hoặc phụ thuộc vào các cụm mơ hồ như "Theo tài liệu", "Dựa vào tài liệu", "Trong tài liệu", "Tài liệu cho biết", "ở trên", "hình trên", "bảng trên", "đoạn trên", "nội dung này".
+- Nếu cần dữ kiện từ hình, bảng hoặc biểu đồ, hãy viết lại dữ kiện cần thiết bằng chữ trong front.
+- Không tạo thẻ chỉ hỏi vị trí trong tài liệu, số trang, tiêu đề trang hoặc câu chữ ngoài ngữ cảnh.
+- Ưu tiên khái niệm, định nghĩa, điều kiện áp dụng, cặp thuật ngữ-ý nghĩa, quy trình, nguyên nhân-kết quả và lỗi hiểu nhầm phổ biến.
+- Không lặp cùng một ý ở nhiều thẻ; mỗi thẻ kiểm tra một đơn vị kiến thức riêng.
+
+Trước khi trả JSON, hãy tự kiểm tra thầm:
+1. Người học có hiểu front mà không nhìn tài liệu gốc không?
+2. back có trả lời trực tiếp và đủ ý không?
+3. front có chứa cụm tham chiếu mơ hồ bị cấm không?
+
+Nếu thẻ nào không đạt, hãy viết lại trước khi trả kết quả cuối cùng.`;
 }
 
 function buildQuestionSchema(numberOfQuestions: number): Record<string, unknown> {
@@ -223,6 +263,34 @@ function buildQuestionSchema(numberOfQuestions: number): Record<string, unknown>
     };
 }
 
+function buildFlashcardSchema(numberOfCards: number): Record<string, unknown> {
+    return {
+        type: 'object',
+        properties: {
+            flashcards: {
+                type: 'array',
+                minItems: numberOfCards,
+                maxItems: numberOfCards,
+                items: {
+                    type: 'object',
+                    properties: {
+                        front: { type: 'string' },
+                        back: { type: 'string' },
+                        difficulty: {
+                            type: 'string',
+                            enum: ['Dễ', 'Trung bình', 'Khó'],
+                        },
+                    },
+                    required: ['front', 'back', 'difficulty'],
+                    additionalProperties: false,
+                },
+            },
+        },
+        required: ['flashcards'],
+        additionalProperties: false,
+    };
+}
+
 export function buildQuizResponseRequest(
     documentContent: string | Record<string, unknown>,
     options: GenerateMCQOptions = {},
@@ -253,6 +321,41 @@ export function buildQuizResponseRequest(
                 name: 'mcq_quiz',
                 strict: true,
                 schema: buildQuestionSchema(numberOfQuestions),
+            },
+        },
+    };
+}
+
+export function buildFlashcardResponseRequest(
+    documentContent: string | Record<string, unknown>,
+    options: GenerateFlashcardOptions = {},
+): Record<string, any> {
+    const {
+        numberOfCards = 5,
+        difficultyDistribution = DEFAULT_DISTRIBUTION,
+        language = 'vi',
+    } = options;
+
+    const content: Array<Record<string, unknown>> = [
+        { type: 'input_text', text: buildFlashcardPrompt(numberOfCards, difficultyDistribution, language) },
+    ];
+
+    if (typeof documentContent === 'string') {
+        content.push({ type: 'input_text', text: `\n\nTÀI LIỆU:\n${prepareDocumentTextForPrompt(documentContent)}` });
+    } else {
+        content.push(documentContent);
+    }
+
+    return {
+        model: OPENAI_QUIZ_MODEL,
+        reasoning: { effort: 'medium' },
+        input: [{ role: 'user', content }],
+        text: {
+            format: {
+                type: 'json_schema',
+                name: 'flashcard_set',
+                strict: true,
+                schema: buildFlashcardSchema(numberOfCards),
             },
         },
     };
@@ -308,6 +411,33 @@ function validateQuestions(parsed: unknown, expectedCount: number): MCQItem[] {
     return questions as MCQItem[];
 }
 
+function validateFlashcards(parsed: unknown, expectedCount: number): FlashcardItem[] {
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as { flashcards?: unknown }).flashcards)) {
+        throw new Error('OpenAI trả về dữ liệu flashcard không hợp lệ.');
+    }
+
+    const flashcards = (parsed as { flashcards: unknown[] }).flashcards;
+    if (flashcards.length !== expectedCount) {
+        throw new Error(`OpenAI trả về ${flashcards.length} flashcard thay vì ${expectedCount}.`);
+    }
+
+    for (const flashcard of flashcards) {
+        const item = flashcard as Partial<FlashcardItem>;
+        if (
+            !item
+            || typeof item.front !== 'string'
+            || item.front.trim().length === 0
+            || typeof item.back !== 'string'
+            || item.back.trim().length === 0
+            || !['Dễ', 'Trung bình', 'Khó'].includes(item.difficulty || '')
+        ) {
+            throw new Error('OpenAI trả về một flashcard không đúng định dạng.');
+        }
+    }
+
+    return flashcards as FlashcardItem[];
+}
+
 export const generateMCQFromFile = async (
     filePath: string,
     mimeType: string,
@@ -332,6 +462,37 @@ export const generateMCQFromFile = async (
 
         console.log(`[OpenAI Service] Đã sinh thành công ${questions.length} câu hỏi`);
         return questions;
+    } finally {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+    }
+};
+
+export const generateFlashcardsFromFile = async (
+    filePath: string,
+    mimeType: string,
+    options: GenerateFlashcardOptions = {},
+): Promise<FlashcardItem[]> => {
+    const numberOfCards = options.numberOfCards ?? 5;
+    const difficultyDistribution = options.difficultyDistribution ?? DEFAULT_DISTRIBUTION;
+    const counts = computeQuestionCounts(numberOfCards, difficultyDistribution);
+
+    try {
+        if (!process.env.OPENAI_API_KEY) {
+            throw new Error('OPENAI_API_KEY chưa được cấu hình.');
+        }
+
+        console.log(`[OpenAI Service] Phân bổ độ khó flashcard: Cấp 1=${counts.level1}, Cấp 2=${counts.level2}, Cấp 3=${counts.level3} (tổng ${numberOfCards})`);
+        console.log(`[OpenAI Service] Đang gọi model: ${OPENAI_QUIZ_MODEL}`);
+
+        const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const request = buildFlashcardResponseRequest(buildDocumentContent(filePath, mimeType), options);
+        const response = await client.responses.create(request);
+        const flashcards = validateFlashcards(JSON.parse(response.output_text), numberOfCards);
+
+        console.log(`[OpenAI Service] Đã sinh thành công ${flashcards.length} flashcard`);
+        return flashcards;
     } finally {
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);

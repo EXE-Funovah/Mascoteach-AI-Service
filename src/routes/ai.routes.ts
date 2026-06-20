@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { chat, generateForBackend, healthCheck } from '../controllers/ai.controller';
+import { chat, generateFlashcardsForBackend, generateForBackend, healthCheck } from '../controllers/ai.controller';
 
 const router = Router();
 
@@ -13,5 +13,9 @@ router.post('/chat', chat);
 // Request:  POST application/json { fileUrl, documentId?, quizTitle?, numberOfQuestions?, difficultyDistribution?, language? }
 // Response: { success, data: { documentId, quizTitle, questions: [{ questionText, questionType, options: [{ optionText, isCorrect }] }] } }
 router.post('/generate-for-backend', generateForBackend);
+
+// Flashcards use the existing backend quiz/question tables:
+// QuestionType="Flashcard", questionText=front, first correct option=back.
+router.post('/generate-flashcards-for-backend', generateFlashcardsForBackend);
 
 export default router;
