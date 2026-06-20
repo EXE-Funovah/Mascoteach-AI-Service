@@ -11,6 +11,11 @@ export interface MascotLiveRuntimeConfig {
     realtimeModel: string;
     defaultLanguage: string;
     defaultVoice: string;
+    botAudioSampleRateHz: number;
+    inputTranscriptionModel: string;
+    vadPrefixPaddingMs: number;
+    vadSilenceDurationMs: number;
+    vadThreshold: number;
     systemPrompt: string;
     reasoningEffort: 'low' | 'medium' | 'high';
     maxOutputTokens: number;

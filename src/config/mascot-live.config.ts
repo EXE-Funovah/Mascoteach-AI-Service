@@ -14,6 +14,19 @@ const parsePositiveInt = (value: string | undefined, fallback: number): number =
     return parsed;
 };
 
+const parseThreshold = (value: string | undefined, fallback: number): number => {
+    if (!value) {
+        return fallback;
+    }
+
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+
+    return Math.min(1, Math.max(0, parsed));
+};
+
 const normalizeReasoningEffort = (value: string | undefined): 'low' | 'medium' | 'high' => {
     const normalized = value?.trim().toLowerCase();
     if (normalized === 'medium' || normalized === 'high') {
@@ -39,6 +52,12 @@ export function getMascotLiveConfig(): MascotLiveRuntimeConfig {
         realtimeModel: process.env.OPENAI_REALTIME_MODEL?.trim() || 'gpt-realtime-2',
         defaultLanguage: process.env.OPENAI_REALTIME_LANGUAGE?.trim() || 'vi',
         defaultVoice: process.env.OPENAI_REALTIME_VOICE?.trim() || 'marin',
+        botAudioSampleRateHz: parsePositiveInt(process.env.OPENAI_REALTIME_AUDIO_SAMPLE_RATE_HZ, 24000),
+        inputTranscriptionModel:
+            process.env.OPENAI_REALTIME_INPUT_TRANSCRIPTION_MODEL?.trim() || 'gpt-4o-mini-transcribe',
+        vadPrefixPaddingMs: parsePositiveInt(process.env.OPENAI_REALTIME_VAD_PREFIX_PADDING_MS, 300),
+        vadSilenceDurationMs: parsePositiveInt(process.env.OPENAI_REALTIME_VAD_SILENCE_DURATION_MS, 500),
+        vadThreshold: parseThreshold(process.env.OPENAI_REALTIME_VAD_THRESHOLD, 0.5),
         systemPrompt: process.env.OPENAI_REALTIME_SYSTEM_PROMPT?.trim() || DEFAULT_SUMADI_AUDIO_PROMPT,
         reasoningEffort: normalizeReasoningEffort(process.env.OPENAI_REALTIME_REASONING_EFFORT),
         maxOutputTokens: parsePositiveInt(process.env.OPENAI_REALTIME_MAX_OUTPUT_TOKENS, 800),

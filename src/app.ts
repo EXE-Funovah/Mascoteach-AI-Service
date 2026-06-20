@@ -1,15 +1,23 @@
 import express, { Request, Response } from 'express';
+import { createServer } from 'http';
+import { IncomingMessage } from 'http';
+import { Socket } from 'net';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { WebSocketServer, WebSocket } from 'ws';
 import mcqRoutes from './routes/mcq.route';
 import aiRoutes from './routes/ai.routes';
 import mascotLiveRoutes from './routes/mascot-live.routes';
+import mascobotRoutes from './routes/mascobot.routes';
 import { getMascotLiveReadiness } from './config/mascot-live.config';
+import { mascobotLiveRelay } from './controllers/mascobot.controller';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5001;
+const server = createServer(app);
+const liveWss = new WebSocketServer({ noServer: true });
 
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
@@ -37,7 +45,68 @@ app.use('/api/v1/ai', aiRoutes);
 // Route cho mascot live orchestration via OpenAI Realtime
 app.use('/api/v1/mascot-live', mascotLiveRoutes);
 
-app.listen(port, () => {
+// Route cho physical Mascobot ESP32 gateway orchestration
+app.use('/api/v1/mascobot', mascobotRoutes);
+
+liveWss.on('connection', (socket: WebSocket, _request: IncomingMessage, peer: unknown) => {
+    const connection = peer as { sessionId: string; deviceId: string; role: 'eye' | 'main' };
+    mascobotLiveRelay.connectPeer({
+        sessionId: connection.sessionId,
+        deviceId: connection.deviceId,
+        role: connection.role,
+        sendText: (payload) => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(payload);
+            }
+        },
+        sendBinary: (payload) => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(payload, { binary: true });
+            }
+        },
+    });
+
+    socket.on('message', (data: Buffer, isBinary: boolean) => {
+        if (isBinary) {
+            if (connection.role === 'eye') {
+                mascobotLiveRelay.relayEyeAudio(connection.sessionId, connection.deviceId, Buffer.from(data));
+            }
+            return;
+        }
+
+        const text = data.toString();
+        if (text === 'ping' && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: 'heartbeat', ts: new Date().toISOString() }));
+        }
+    });
+
+    const cleanup = () => {
+        mascobotLiveRelay.disconnectPeer(connection.sessionId, connection.deviceId, connection.role);
+    };
+    socket.on('close', cleanup);
+    socket.on('error', cleanup);
+});
+
+server.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
+    const pathname = request.url ? new URL(request.url, `http://${request.headers.host || 'localhost'}`).pathname : '';
+    const match = pathname.match(/^\/ws\/mascobot\/live\/(eye|main)\/([^/]+)\/([^/]+)$/);
+
+    if (!match) {
+        socket.destroy();
+        return;
+    }
+
+    const [, role, sessionId, deviceId] = match;
+    liveWss.handleUpgrade(request, socket, head, (ws) => {
+        liveWss.emit('connection', ws, request, {
+            role: role as 'eye' | 'main',
+            sessionId,
+            deviceId,
+        });
+    });
+});
+
+server.listen(port, () => {
     const mascotLive = getMascotLiveReadiness();
 
     console.log(`========================================`);
@@ -47,6 +116,11 @@ app.listen(port, () => {
     console.log(`Health Check: GET /api/v1/ai/health`);
     console.log(`OpenAI Realtime Health: GET /api/v1/mascot-live/health`);
     console.log(`OpenAI Realtime Session: POST /api/v1/mascot-live/session`);
+    console.log(`Mascobot Gateway Health: GET /api/v1/mascobot/health`);
+    console.log(`Mascobot Eye Audio: POST /api/v1/mascobot/eye/:deviceId/audio`);
+    console.log(`Mascobot Main Command: GET /api/v1/mascobot/main/:deviceId/command`);
+    console.log(`Mascobot Live Eye WS: ws://localhost:${port}/ws/mascobot/live/eye/:sessionId/:deviceId`);
+    console.log(`Mascobot Live Main WS: ws://localhost:${port}/ws/mascobot/live/main/:sessionId/:deviceId`);
     console.log(`OpenAI Realtime model: ${mascotLive.model}`);
     console.log(`OpenAI Realtime ready: ${mascotLive.configured ? 'yes' : `no (${mascotLive.missingFields.join(', ') || 'unknown'})`}`);
     console.log(`========================================`);
