@@ -4,10 +4,11 @@ on:
   push:
     branches:
       - main
+      - development
   workflow_dispatch:
 
 concurrency:
-  group: deploy-ai-service
+  group: deploy-ai-service-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -15,6 +16,82 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve deploy configuration
+        id: deploy_config
+        run: |
+          case "${{ github.ref_name }}" in
+            main|development)
+              echo "Deploy branch is supported: ${{ github.ref_name }}"
+              ;;
+            *)
+              echo "Unsupported deploy branch: ${{ github.ref_name }}"
+              exit 1
+              ;;
+          esac
+
+          case "${{ github.ref_name }}" in
+            main)
+              echo "deploy_path=/data/docker/Mascoteach-AI-Service" >> "$GITHUB_OUTPUT"
+              ;;
+            development)
+              echo "deploy_path=/data/docker/Mascoteach-AI-Service-Dev" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Render .env for main
+        if: github.ref_name == 'main'
+        run: |
+          cat <<'EOF' > .env.deploy
+          ${{ secrets.AI_SERVICE_ENV_MAIN }}
+          EOF
+
+          if ! grep -q '[^[:space:]]' .env.deploy; then
+            echo "Missing required secret content: AI_SERVICE_ENV_MAIN"
+            exit 1
+          fi
+
+      - name: Render .env for development
+        if: github.ref_name == 'development'
+        run: |
+          cat <<'EOF' > .env.deploy
+          ${{ secrets.AI_SERVICE_ENV_DEVELOPMENT }}
+          EOF
+
+          if ! grep -q '[^[:space:]]' .env.deploy; then
+            echo "Missing required secret content: AI_SERVICE_ENV_DEVELOPMENT"
+            exit 1
+          fi
+
+      - name: Validate rendered .env against .env.example
+        run: |
+          extract_keys() {
+            sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$1" | sort -u
+          }
+
+          missing_keys="$(comm -23 <(extract_keys .env.example) <(extract_keys .env.deploy) || true)"
+
+          if [ -n "$missing_keys" ]; then
+            echo "Rendered .env is missing required keys from .env.example:"
+            echo "$missing_keys"
+            exit 1
+          fi
+
+          echo "Rendered .env includes all keys declared in .env.example."
+
+      - name: Upload rendered .env to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: .env.deploy
+          target: ${{ steps.deploy_config.outputs.deploy_path }}
+          overwrite: true
+
       - name: Deploy to Server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -26,11 +103,58 @@ jobs:
           script: |
             set -e
 
-            cd /data/docker/Mascoteach-AI-Service
+            DEPLOY_BRANCH="${{ github.ref_name }}"
+            DEPLOY_PATH="${{ steps.deploy_config.outputs.deploy_path }}"
 
-            git fetch origin main
-            git reset --hard origin/main
+            cd "${DEPLOY_PATH}"
+
+            echo "Deploying branch: ${DEPLOY_BRANCH}"
+            echo "Deploy path: ${DEPLOY_PATH}"
+
+            mv .env.deploy .env
+
+            git fetch origin "${DEPLOY_BRANCH}"
+            git checkout --force -B "${DEPLOY_BRANCH}" "origin/${DEPLOY_BRANCH}"
+            git reset --hard "origin/${DEPLOY_BRANCH}"
 
             docker compose -f docker-compose.server.yml up -d --build --remove-orphans
+
+            HEALTH_PORT="$(sed -n 's/^HOST_PORT=//p' .env | tail -n1 | tr -d '\r')"
+            if [ -z "$HEALTH_PORT" ]; then
+              HEALTH_PORT="5001"
+            fi
+
+            HEALTH_URL="http://127.0.0.1:${HEALTH_PORT}/api/v1/ai/health"
+            HEALTH_OK=false
+
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if command -v curl >/dev/null 2>&1; then
+                if curl --fail --silent --show-error "$HEALTH_URL" >/tmp/mascoteach-ai-health.json; then
+                  HEALTH_OK=true
+                  break
+                fi
+              elif command -v wget >/dev/null 2>&1; then
+                if wget -qO /tmp/mascoteach-ai-health.json "$HEALTH_URL"; then
+                  HEALTH_OK=true
+                  break
+                fi
+              else
+                echo "Neither curl nor wget is available for post-deploy health checks."
+                break
+              fi
+
+              echo "Health check attempt ${attempt} failed. Retrying in 5 seconds..."
+              sleep 5
+            done
+
+            if [ "$HEALTH_OK" != "true" ]; then
+              echo "AI service health check failed after deploy."
+              docker compose -f docker-compose.server.yml ps
+              docker compose -f docker-compose.server.yml logs --tail=200
+              exit 1
+            fi
+
+            echo "AI service health check passed:"
+            cat /tmp/mascoteach-ai-health.json
 
             docker image prune -f
