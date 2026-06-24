@@ -5,6 +5,10 @@ const makeConfig = (overrides = {}) => ({
     provider: 'openai',
     engine: 'openai_realtime_webrtc',
     apiKey: 'test-openai-key',
+    jwtKey: 'test-jwt-key',
+    jwtIssuer: 'Mascoteach',
+    jwtAudience: 'MascoteachClient',
+    backendApiBaseUrl: 'https://api.mascoteach.test',
     apiBaseUrl: 'https://api.openai.com',
     realtimeModel: 'gpt-realtime-2',
     defaultLanguage: 'vi',
@@ -18,6 +22,8 @@ const makeConfig = (overrides = {}) => ({
     reasoningEffort: 'low',
     maxOutputTokens: 800,
     sessionTtlSeconds: 300,
+    freemiumDailyLimitSeconds: 300,
+    quotaTimeZone: 'Asia/Ho_Chi_Minh',
     isConfigured: true,
     missingFields: [],
     ...overrides,
@@ -112,6 +118,87 @@ test('OpenAiLiveService requests OpenAI client secrets with realtime session set
         assert.equal(created.status, 'created');
         assert.equal(created.clientSecret.value, 'ek_second_secret');
         assert.equal(created.clientSecret.expiresAt, '2026-06-07T00:05:00.000Z');
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+test('OpenAiLiveService blocks freemium users after 5 minutes of Sumadi talk time in a day', async () => {
+    const {
+        OpenAiLiveService,
+        MascotLiveQuotaExceededError,
+    } = require('../dist/services/openai-live.service.js');
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+            client_secret: {
+                value: 'ek_quota_secret',
+                expires_at: '2026-06-24T00:05:00.000Z',
+            },
+        }),
+    });
+
+    const clock = {
+        current: new Date('2026-06-24T01:00:00.000Z'),
+        now() {
+            return new Date(this.current);
+        },
+    };
+
+    try {
+        const service = new OpenAiLiveService(makeConfig(), {
+            now: () => clock.now(),
+        });
+
+        const firstSession = await service.createSession(
+            { displayName: 'Freemium Student' },
+            {
+                userId: '42',
+                role: 'Student',
+                subscriptionTier: 'Freemium',
+                isPremiumActive: false,
+            },
+        );
+
+        clock.current = new Date('2026-06-24T01:03:00.000Z');
+        const firstEnded = await service.endSession(firstSession.sessionId, '42');
+        assert.equal(firstEnded.status, 'ended');
+
+        const secondSession = await service.createSession(
+            { displayName: 'Freemium Student' },
+            {
+                userId: '42',
+                role: 'Student',
+                subscriptionTier: 'Freemium',
+                isPremiumActive: false,
+            },
+        );
+
+        assert.equal(secondSession.maxDurationSeconds, 120);
+
+        clock.current = new Date('2026-06-24T01:05:00.000Z');
+        const secondEnded = await service.endSession(secondSession.sessionId, '42');
+        assert.equal(secondEnded.status, 'ended');
+
+        await assert.rejects(
+            () => service.createSession(
+                { displayName: 'Freemium Student' },
+                {
+                    userId: '42',
+                    role: 'Student',
+                    subscriptionTier: 'Freemium',
+                    isPremiumActive: false,
+                },
+            ),
+            (error) => {
+                assert.equal(error instanceof MascotLiveQuotaExceededError, true);
+                assert.equal(error.message, 'Bạn đã dùng hết 5 phút trò chuyện với Sumadi hôm nay.');
+                return true;
+            },
+        );
     } finally {
         global.fetch = originalFetch;
     }

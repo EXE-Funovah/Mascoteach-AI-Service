@@ -48,6 +48,13 @@ export function getMascotLiveConfig(): MascotLiveRuntimeConfig {
         provider: 'openai',
         engine: 'openai_realtime_webrtc',
         apiKey,
+        jwtKey: process.env.JWT_KEY?.trim(),
+        jwtIssuer: process.env.JWT_ISSUER?.trim(),
+        jwtAudience: process.env.JWT_AUDIENCE?.trim(),
+        backendApiBaseUrl:
+            process.env.MASCOTEACH_BACKEND_API_BASE_URL?.trim()
+            || process.env.BACKEND_API_BASE_URL?.trim()
+            || undefined,
         apiBaseUrl: process.env.OPENAI_REALTIME_API_BASE_URL?.trim() || 'https://api.openai.com',
         realtimeModel: process.env.OPENAI_REALTIME_MODEL?.trim() || 'gpt-realtime-2',
         defaultLanguage: process.env.OPENAI_REALTIME_LANGUAGE?.trim() || 'vi',
@@ -62,6 +69,8 @@ export function getMascotLiveConfig(): MascotLiveRuntimeConfig {
         reasoningEffort: normalizeReasoningEffort(process.env.OPENAI_REALTIME_REASONING_EFFORT),
         maxOutputTokens: parsePositiveInt(process.env.OPENAI_REALTIME_MAX_OUTPUT_TOKENS, 800),
         sessionTtlSeconds: parsePositiveInt(process.env.OPENAI_REALTIME_SESSION_TTL_SECONDS, 300),
+        freemiumDailyLimitSeconds: parsePositiveInt(process.env.MASCOT_LIVE_FREEMIUM_DAILY_LIMIT_SECONDS, 300),
+        quotaTimeZone: process.env.MASCOT_LIVE_QUOTA_TIME_ZONE?.trim() || 'Asia/Ho_Chi_Minh',
         isConfigured: missingFields.length === 0,
         missingFields,
     };

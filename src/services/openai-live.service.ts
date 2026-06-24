@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import {
+    AuthenticatedMascotLiveUser,
     CreateMascotLiveSessionInput,
     MascotLiveReadiness,
     MascotLiveRuntimeConfig,
@@ -14,10 +15,43 @@ export class OpenAiLiveConfigError extends Error {
     }
 }
 
+export class MascotLiveQuotaExceededError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'MascotLiveQuotaExceededError';
+    }
+}
+
+export class MascotLiveForbiddenError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'MascotLiveForbiddenError';
+    }
+}
+
+export class MascotLiveSessionConflictError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'MascotLiveSessionConflictError';
+    }
+}
+
+interface OpenAiLiveServiceOptions {
+    now?: () => Date;
+}
+
 export class OpenAiLiveService {
     private readonly sessions = new Map<string, MascotLiveSession>();
+    private readonly countedUsageByUserDay = new Map<string, number>();
+    private readonly activeSessionByUser = new Map<string, string>();
+    private readonly now: () => Date;
 
-    constructor(private readonly config: MascotLiveRuntimeConfig) {}
+    constructor(
+        private readonly config: MascotLiveRuntimeConfig,
+        options: OpenAiLiveServiceOptions = {},
+    ) {
+        this.now = options.now ?? (() => new Date());
+    }
 
     getReadiness(): MascotLiveReadiness {
         return {
@@ -32,18 +66,26 @@ export class OpenAiLiveService {
         };
     }
 
-    async createSession(input: CreateMascotLiveSessionInput): Promise<MascotLiveSession> {
+    async createSession(
+        input: CreateMascotLiveSessionInput,
+        requester?: AuthenticatedMascotLiveUser,
+    ): Promise<MascotLiveSession> {
         if (!this.config.isConfigured || !this.config.apiKey) {
             throw new OpenAiLiveConfigError(
                 `OpenAI Realtime is not configured. Missing: ${this.config.missingFields.join(', ') || 'unknown fields'}`,
             );
         }
 
-        const now = new Date();
+        const now = this.now();
         const sessionId = randomUUID();
         const language = input.language?.trim() || this.config.defaultLanguage;
         const voice = input.voice?.trim() || this.config.defaultVoice;
-        const clientSecret = await this.createClientSecret(language, voice);
+        const access = this.resolveRequester(input, requester);
+        const remainingDailySeconds = this.resolveRemainingDailySeconds(access, now);
+        const sessionTtlSeconds = access.isPremiumActive
+            ? this.config.sessionTtlSeconds
+            : Math.min(this.config.sessionTtlSeconds, remainingDailySeconds);
+        const clientSecret = await this.createClientSecret(language, voice, sessionTtlSeconds);
 
         const session: MascotLiveSession = {
             provider: 'openai',
@@ -56,6 +98,11 @@ export class OpenAiLiveService {
             language,
             voice,
             model: this.config.realtimeModel,
+            userId: access.userId,
+            subscriptionTier: access.subscriptionTier,
+            isPremiumActive: access.isPremiumActive,
+            maxDurationSeconds: sessionTtlSeconds,
+            remainingDailySeconds: access.isPremiumActive ? null : remainingDailySeconds,
             clientSecret,
             connection: {
                 apiBaseUrl: this.config.apiBaseUrl,
@@ -68,35 +115,41 @@ export class OpenAiLiveService {
                 'Frontend should stream microphone audio directly to the Realtime session and play the returned remote audio track.',
                 'Close the RTCPeerConnection when the learner ends the session.',
             ],
+            quotaDateKey: this.getQuotaDateKey(now),
+            countedUsageSeconds: 0,
         };
 
         this.sessions.set(sessionId, session);
+        this.activeSessionByUser.set(access.userId, sessionId);
         return session;
     }
 
-    getSession(sessionId: string): MascotLiveSession | null {
-        return this.sessions.get(sessionId) ?? null;
+    getSession(sessionId: string, requesterUserId?: string): MascotLiveSession | null {
+        const session = this.sessions.get(sessionId) ?? null;
+        if (!session) {
+            return null;
+        }
+
+        this.ensureSessionOwnership(session, requesterUserId);
+        this.synchronizeSessionUsage(session, this.now());
+        return session;
     }
 
-    async endSession(sessionId: string): Promise<MascotLiveSession> {
+    async endSession(sessionId: string, requesterUserId?: string): Promise<MascotLiveSession> {
         const existing = this.sessions.get(sessionId);
         if (!existing) {
             throw new OpenAiLiveConfigError(`Mascot live session not found: ${sessionId}`);
         }
 
-        const ended: MascotLiveSession = {
-            ...existing,
-            status: 'ended',
-            endedAt: new Date().toISOString(),
-        };
-
-        this.sessions.set(sessionId, ended);
-        return ended;
+        this.ensureSessionOwnership(existing, requesterUserId);
+        this.synchronizeSessionUsage(existing, this.now(), true);
+        return existing;
     }
 
     private async createClientSecret(
         language: string,
         voice: string,
+        ttlSeconds: number,
     ): Promise<OpenAiRealtimeClientSecret> {
         const response = await fetch(`${this.config.apiBaseUrl.replace(/\/+$/, '')}/v1/realtime/client_secrets`, {
             method: 'POST',
@@ -107,7 +160,7 @@ export class OpenAiLiveService {
             body: JSON.stringify({
                 expires_after: {
                     anchor: 'created_at',
-                    seconds: this.config.sessionTtlSeconds,
+                    seconds: ttlSeconds,
                 },
                 session: {
                     type: 'realtime',
@@ -216,5 +269,123 @@ export class OpenAiLiveService {
         } catch {
             return String(value);
         }
+    }
+
+    private resolveRequester(
+        input: CreateMascotLiveSessionInput,
+        requester?: AuthenticatedMascotLiveUser,
+    ): AuthenticatedMascotLiveUser {
+        if (requester) {
+            return requester;
+        }
+
+        return {
+            userId: input.userId?.trim() || 'anonymous',
+            subscriptionTier: 'Freemium',
+            isPremiumActive: false,
+            role: null,
+        };
+    }
+
+    private resolveRemainingDailySeconds(access: AuthenticatedMascotLiveUser, now: Date): number {
+        if (access.isPremiumActive) {
+            return this.config.sessionTtlSeconds;
+        }
+
+        this.synchronizeUserActiveSession(access.userId, now);
+        const activeSessionId = this.activeSessionByUser.get(access.userId);
+        if (activeSessionId) {
+            throw new MascotLiveSessionConflictError('Bạn đang có một phiên trò chuyện với Sumadi đang hoạt động.');
+        }
+
+        const usedSeconds = this.getCountedUsage(access.userId, this.getQuotaDateKey(now));
+        const remainingSeconds = this.config.freemiumDailyLimitSeconds - usedSeconds;
+        if (remainingSeconds <= 0) {
+            throw new MascotLiveQuotaExceededError('Bạn đã dùng hết 5 phút trò chuyện với Sumadi hôm nay.');
+        }
+
+        return remainingSeconds;
+    }
+
+    private synchronizeUserActiveSession(userId: string, now: Date): void {
+        const activeSessionId = this.activeSessionByUser.get(userId);
+        if (!activeSessionId) {
+            return;
+        }
+
+        const session = this.sessions.get(activeSessionId);
+        if (!session) {
+            this.activeSessionByUser.delete(userId);
+            return;
+        }
+
+        this.synchronizeSessionUsage(session, now);
+        if (session.status === 'ended') {
+            this.activeSessionByUser.delete(userId);
+        }
+    }
+
+    private synchronizeSessionUsage(session: MascotLiveSession, now: Date, forceEnd = false): void {
+        const usedSeconds = this.computeUsedSeconds(session, now);
+        const countedUsageSeconds = session.countedUsageSeconds ?? 0;
+        const delta = usedSeconds - countedUsageSeconds;
+
+        if (!session.isPremiumActive && delta > 0) {
+            const usageKey = this.buildUsageKey(session.userId, session.quotaDateKey ?? this.getQuotaDateKey(now));
+            this.countedUsageByUserDay.set(usageKey, this.getCountedUsage(session.userId, session.quotaDateKey ?? this.getQuotaDateKey(now)) + delta);
+        }
+
+        session.countedUsageSeconds = usedSeconds;
+
+        if (forceEnd || usedSeconds >= session.maxDurationSeconds) {
+            session.status = 'ended';
+            session.endedAt = now.toISOString();
+            this.activeSessionByUser.delete(session.userId);
+        }
+
+        session.remainingDailySeconds = session.isPremiumActive
+            ? null
+            : Math.max(0, this.config.freemiumDailyLimitSeconds - this.getCountedUsage(
+                session.userId,
+                session.quotaDateKey ?? this.getQuotaDateKey(now),
+            ));
+    }
+
+    private computeUsedSeconds(session: MascotLiveSession, now: Date): number {
+        const startedAtMs = new Date(session.createdAt).getTime();
+        const endedAtMs = session.endedAt ? new Date(session.endedAt).getTime() : now.getTime();
+        const elapsedSeconds = Math.max(0, Math.ceil((endedAtMs - startedAtMs) / 1000));
+        return Math.min(session.maxDurationSeconds, elapsedSeconds);
+    }
+
+    private ensureSessionOwnership(session: MascotLiveSession, requesterUserId?: string): void {
+        if (!requesterUserId) {
+            return;
+        }
+
+        if (session.userId !== requesterUserId) {
+            throw new MascotLiveForbiddenError('Bạn không có quyền truy cập phiên trò chuyện này.');
+        }
+    }
+
+    private getQuotaDateKey(value: Date): string {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: this.config.quotaTimeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).formatToParts(value);
+        const year = parts.find((part) => part.type === 'year')?.value ?? '0000';
+        const month = parts.find((part) => part.type === 'month')?.value ?? '00';
+        const day = parts.find((part) => part.type === 'day')?.value ?? '00';
+        return `${year}-${month}-${day}`;
+    }
+
+    private buildUsageKey(userId: string, quotaDateKey: string): string {
+        return `${userId}:${quotaDateKey}`;
+    }
+
+    private getCountedUsage(userId: string, quotaDateKey: string): number {
+        return this.countedUsageByUserDay.get(this.buildUsageKey(userId, quotaDateKey)) ?? 0;
     }
 }

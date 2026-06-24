@@ -7,6 +7,10 @@ export interface MascotLiveRuntimeConfig {
     provider: MascotLiveProvider;
     engine: MascotLiveEngine;
     apiKey?: string;
+    jwtKey?: string;
+    jwtIssuer?: string;
+    jwtAudience?: string;
+    backendApiBaseUrl?: string;
     apiBaseUrl: string;
     realtimeModel: string;
     defaultLanguage: string;
@@ -20,6 +24,8 @@ export interface MascotLiveRuntimeConfig {
     reasoningEffort: 'low' | 'medium' | 'high';
     maxOutputTokens: number;
     sessionTtlSeconds: number;
+    freemiumDailyLimitSeconds: number;
+    quotaTimeZone: string;
     isConfigured: boolean;
     missingFields: string[];
 }
@@ -34,6 +40,15 @@ export interface CreateMascotLiveSessionInput {
 export interface OpenAiRealtimeClientSecret {
     value: string;
     expiresAt: string | null;
+}
+
+export interface AuthenticatedMascotLiveUser {
+    userId: string;
+    token?: string;
+    role?: string | null;
+    subscriptionTier: string;
+    isPremiumActive: boolean;
+    premiumExpiresAt?: string | null;
 }
 
 export interface MascotLiveConnectionInfo {
@@ -54,9 +69,16 @@ export interface MascotLiveSession {
     language: string;
     voice: string;
     model: string;
+    userId: string;
+    subscriptionTier: string;
+    isPremiumActive: boolean;
+    maxDurationSeconds: number;
+    remainingDailySeconds: number | null;
     clientSecret: OpenAiRealtimeClientSecret;
     connection: MascotLiveConnectionInfo;
     notes: string[];
+    quotaDateKey?: string;
+    countedUsageSeconds?: number;
 }
 
 export interface MascotLiveReadiness {
