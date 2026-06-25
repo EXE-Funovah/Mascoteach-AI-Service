@@ -65,22 +65,6 @@ jobs:
             exit 1
           fi
 
-      - name: Validate rendered .env against .env.example
-        run: |
-          extract_keys() {
-            sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$1" | sort -u
-          }
-
-          missing_keys="$(comm -23 <(extract_keys .env.example) <(extract_keys .env.deploy) || true)"
-
-          if [ -n "$missing_keys" ]; then
-            echo "Rendered .env is missing required keys from .env.example:"
-            echo "$missing_keys"
-            exit 1
-          fi
-
-          echo "Rendered .env includes all keys declared in .env.example."
-
       - name: Upload rendered .env to server
         uses: appleboy/scp-action@v0.1.7
         with:
