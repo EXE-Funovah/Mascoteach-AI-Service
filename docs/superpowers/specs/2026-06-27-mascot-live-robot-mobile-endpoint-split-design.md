@@ -32,6 +32,7 @@ This couples two clients with different audio constraints to one shared audio tu
 3. Preserve the current robot-tuned audio settings for the new robot endpoint.
 4. Keep mobile AI-side behavior unchanged.
 5. Split only audio-facing config between mobile and robot.
+6. Fix mobile voice quality through backend changes only, without requiring a mobile app rebuild or Google Play redeploy.
 
 ## Non-goals
 
@@ -39,6 +40,7 @@ This couples two clients with different audio constraints to one shared audio tu
 2. No change to quota, auth, TTL, prompt, or subscription logic unless required by routing.
 3. No change to the mobile app endpoint path in this task.
 4. No move to a separate service or deployment.
+5. No mobile client code change that would require shipping a new app build for this fix.
 
 ## Approved decisions
 
@@ -140,6 +142,8 @@ No mobile API path change is required in this task.
 
 The mobile app benefits automatically once the backend default/mobile profile stops inheriting robot audio tuning.
 
+This fix must remain backend-only for mobile consumers so the improvement can be deployed without rebuilding or re-uploading the mobile app.
+
 ## Data and contract impact
 
 The response contract for session creation, session fetch, and session end should remain unchanged for both clients.
@@ -181,6 +185,7 @@ Verify that:
 3. Update robot caller(s) to use `/api/v1/mascobot/live/*`.
 4. Validate robot behavior remains unchanged.
 5. Validate mobile voice quality against the new default/mobile audio profile.
+6. Deploy backend changes only for the mobile fix path; no mobile app release should be required for this change to take effect.
 
 ## Risks
 
@@ -201,3 +206,4 @@ Verify that:
 3. Robot preserves current live audio behavior.
 4. Mobile no longer inherits robot-specific audio tuning.
 5. AI-side config remains aligned across both profiles.
+6. Mobile users receive the fix after backend deployment, without a new app build or Google Play update.
