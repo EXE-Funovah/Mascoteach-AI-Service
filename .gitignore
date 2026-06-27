@@ -10,3 +10,4 @@ acme/
 .artifacts/
 coverage/
 *.log
+/docs/superpowers

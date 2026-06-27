@@ -117,6 +117,8 @@ server.listen(port, () => {
     console.log(`OpenAI Realtime Health: GET /api/v1/mascot-live/health`);
     console.log(`OpenAI Realtime Session: POST /api/v1/mascot-live/session`);
     console.log(`Mascobot Gateway Health: GET /api/v1/mascobot/health`);
+    console.log(`Mascobot Live Health: GET /api/v1/mascobot/live/health`);
+    console.log(`Mascobot Live Session: POST /api/v1/mascobot/live/session`);
     console.log(`Mascobot Eye Audio: POST /api/v1/mascobot/eye/:deviceId/audio`);
     console.log(`Mascobot Main Command: GET /api/v1/mascobot/main/:deviceId/command`);
     console.log(`Mascobot Live Eye WS: ws://localhost:${port}/ws/mascobot/live/eye/:sessionId/:deviceId`);

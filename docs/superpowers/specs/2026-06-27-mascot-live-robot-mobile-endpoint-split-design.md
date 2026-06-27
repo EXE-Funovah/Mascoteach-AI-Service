@@ -63,7 +63,7 @@ Add a dedicated robot API:
 
 The current config should become the initial **robot audio profile**.
 
-The existing mobile/default endpoint should switch to a **normal/mobile audio profile**.
+The existing mobile/default endpoint should switch to the **OpenAI Realtime default audio profile hardcoded in backend code**.
 
 The split is intentionally limited to audio-facing settings:
 
@@ -98,7 +98,7 @@ Do not fork the entire service unless a later constraint proves that necessary.
 Refactor the live config module so it can resolve:
 
 - shared/base realtime config
-- mobile/default audio overrides
+- mobile/default hardcoded OpenAI-default audio values
 - robot audio overrides
 
 Recommended shape:
@@ -109,7 +109,7 @@ Recommended shape:
 
 The robot runtime config should preserve the current audio values exactly as they exist today.
 
-The mobile/default runtime config should keep the same non-audio values while using new normal/mobile audio values.
+The mobile/default runtime config should keep the same non-audio values while using hardcoded OpenAI-default audio values instead of separate mobile environment variables.
 
 ### 2. Controller and route wiring
 
@@ -184,7 +184,7 @@ Verify that:
 2. Keep mobile app on the existing endpoint.
 3. Update robot caller(s) to use `/api/v1/mascobot/live/*`.
 4. Validate robot behavior remains unchanged.
-5. Validate mobile voice quality against the new default/mobile audio profile.
+5. Validate mobile voice quality against the hardcoded OpenAI-default mobile audio profile.
 6. Deploy backend changes only for the mobile fix path; no mobile app release should be required for this change to take effect.
 
 ## Risks

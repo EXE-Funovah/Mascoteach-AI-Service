@@ -1,6 +1,8 @@
 import { MascotLiveReadiness, MascotLiveRuntimeConfig } from '../types/mascot-live.types';
 import { DEFAULT_SUMADI_AUDIO_PROMPT } from './mascot-live.prompt';
 
+type MascotLiveProfile = 'mobile' | 'robot';
+
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
     if (!value) {
         return fallback;
@@ -36,7 +38,10 @@ const normalizeReasoningEffort = (value: string | undefined): 'low' | 'medium' |
     return 'low';
 };
 
-export function getMascotLiveConfig(): MascotLiveRuntimeConfig {
+const buildBaseConfig = (): Omit<
+    MascotLiveRuntimeConfig,
+    'botAudioSampleRateHz' | 'vadPrefixPaddingMs' | 'vadSilenceDurationMs' | 'vadThreshold'
+> => {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     const missingFields: string[] = [];
 
@@ -59,12 +64,8 @@ export function getMascotLiveConfig(): MascotLiveRuntimeConfig {
         realtimeModel: process.env.OPENAI_REALTIME_MODEL?.trim() || 'gpt-realtime-2',
         defaultLanguage: process.env.OPENAI_REALTIME_LANGUAGE?.trim() || 'vi',
         defaultVoice: process.env.OPENAI_REALTIME_VOICE?.trim() || 'marin',
-        botAudioSampleRateHz: parsePositiveInt(process.env.OPENAI_REALTIME_AUDIO_SAMPLE_RATE_HZ, 24000),
         inputTranscriptionModel:
             process.env.OPENAI_REALTIME_INPUT_TRANSCRIPTION_MODEL?.trim() || 'gpt-4o-mini-transcribe',
-        vadPrefixPaddingMs: parsePositiveInt(process.env.OPENAI_REALTIME_VAD_PREFIX_PADDING_MS, 300),
-        vadSilenceDurationMs: parsePositiveInt(process.env.OPENAI_REALTIME_VAD_SILENCE_DURATION_MS, 500),
-        vadThreshold: parseThreshold(process.env.OPENAI_REALTIME_VAD_THRESHOLD, 0.5),
         systemPrompt: process.env.OPENAI_REALTIME_SYSTEM_PROMPT?.trim() || DEFAULT_SUMADI_AUDIO_PROMPT,
         reasoningEffort: normalizeReasoningEffort(process.env.OPENAI_REALTIME_REASONING_EFFORT),
         maxOutputTokens: parsePositiveInt(process.env.OPENAI_REALTIME_MAX_OUTPUT_TOKENS, 800),
@@ -74,6 +75,41 @@ export function getMascotLiveConfig(): MascotLiveRuntimeConfig {
         isConfigured: missingFields.length === 0,
         missingFields,
     };
+};
+
+const buildAudioProfile = (
+    profile: MascotLiveProfile,
+): Pick<MascotLiveRuntimeConfig, 'botAudioSampleRateHz' | 'vadPrefixPaddingMs' | 'vadSilenceDurationMs' | 'vadThreshold'> => {
+    if (profile === 'robot') {
+        return {
+            botAudioSampleRateHz: parsePositiveInt(process.env.OPENAI_REALTIME_AUDIO_SAMPLE_RATE_HZ, 24000),
+            vadPrefixPaddingMs: parsePositiveInt(process.env.OPENAI_REALTIME_VAD_PREFIX_PADDING_MS, 300),
+            vadSilenceDurationMs: parsePositiveInt(process.env.OPENAI_REALTIME_VAD_SILENCE_DURATION_MS, 500),
+            vadThreshold: parseThreshold(process.env.OPENAI_REALTIME_VAD_THRESHOLD, 0.5),
+        };
+    }
+
+    return {
+        botAudioSampleRateHz: 24000,
+        vadPrefixPaddingMs: 300,
+        vadSilenceDurationMs: 500,
+        vadThreshold: 0.5,
+    };
+};
+
+const buildMascotLiveConfig = (profile: MascotLiveProfile): MascotLiveRuntimeConfig => {
+    return {
+        ...buildBaseConfig(),
+        ...buildAudioProfile(profile),
+    };
+};
+
+export function getMascotLiveConfig(): MascotLiveRuntimeConfig {
+    return buildMascotLiveConfig('mobile');
+}
+
+export function getMascobotLiveConfig(): MascotLiveRuntimeConfig {
+    return buildMascotLiveConfig('robot');
 }
 
 export function getMascotLiveReadiness(

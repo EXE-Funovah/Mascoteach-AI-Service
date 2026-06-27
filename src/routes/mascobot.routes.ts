@@ -1,5 +1,11 @@
 import { Router } from 'express';
 import {
+    createMascobotLiveSession,
+    endMascobotLiveSession,
+    getMascobotLiveSession,
+    mascobotLiveHealthCheck,
+} from '../controllers/mascot-live.controller';
+import {
     ackMascobotMainCommand,
     getMascobotDeviceState,
     getMascobotMainCommand,
@@ -12,6 +18,10 @@ import {
 const router = Router();
 
 router.get('/health', mascobotHealthCheck);
+router.get('/live/health', mascobotLiveHealthCheck);
+router.post('/live/session', createMascobotLiveSession);
+router.get('/live/session/:sessionId', getMascobotLiveSession);
+router.post('/live/session/:sessionId/end', endMascobotLiveSession);
 router.post('/devices/:deviceId/heartbeat', heartbeatMascobotDevice);
 router.get('/devices/:deviceId', getMascobotDeviceState);
 router.post('/eye/:deviceId/audio', uploadMascobotEyeAudio);

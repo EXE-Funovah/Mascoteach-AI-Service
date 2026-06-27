@@ -96,6 +96,14 @@ test('OpenAiLiveService requests OpenAI client secrets with realtime session set
             seconds: 300,
         });
         assert.equal(payload.session.max_output_tokens, 800);
+        assert.equal(payload.session.audio.input.format.type, 'audio/pcm');
+        assert.equal(payload.session.audio.input.format.rate, 24000);
+        assert.equal(payload.session.audio.input.transcription.model, 'gpt-4o-mini-transcribe');
+        assert.equal(payload.session.audio.input.turn_detection.prefix_padding_ms, 300);
+        assert.equal(payload.session.audio.input.turn_detection.silence_duration_ms, 500);
+        assert.equal(payload.session.audio.input.turn_detection.threshold, 0.5);
+        assert.equal(payload.session.audio.output.format.type, 'audio/pcm');
+        assert.equal(payload.session.audio.output.format.rate, 24000);
         assert.equal(payload.session.audio.output.voice, 'marin');
         assert.equal(payload.session.audio.input.turn_detection.type, 'server_vad');
 
@@ -112,7 +120,12 @@ test('OpenAiLiveService requests OpenAI client secrets with realtime session set
     };
 
     try {
-        const service = new OpenAiLiveService(makeConfig());
+        const service = new OpenAiLiveService(makeConfig({
+            botAudioSampleRateHz: 24000,
+            vadPrefixPaddingMs: 300,
+            vadSilenceDurationMs: 500,
+            vadThreshold: 0.5,
+        }));
         const created = await service.createSession({ displayName: 'Student Two' });
 
         assert.equal(created.status, 'created');

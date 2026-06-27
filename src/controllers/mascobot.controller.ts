@@ -1,11 +1,12 @@
 import { Request, Response } from 'express';
-import { getMascotLiveConfig, getMascotLiveReadiness } from '../config/mascot-live.config';
+import { getMascobotLiveConfig, getMascotLiveReadiness } from '../config/mascot-live.config';
 import { getMascobotGatewayConfig } from '../config/mascobot-gateway.config';
 import { MascobotGatewayService, MascobotGatewayValidationError } from '../services/mascobot-gateway.service';
 import { MascobotOpenAiRealtimeService } from '../services/mascobot-openai-realtime.service';
 
 const gateway = new MascobotGatewayService(getMascobotGatewayConfig());
-export const mascobotLiveRelay = new MascobotOpenAiRealtimeService(getMascotLiveConfig());
+const mascobotLiveConfig = getMascobotLiveConfig();
+export const mascobotLiveRelay = new MascobotOpenAiRealtimeService(mascobotLiveConfig);
 
 const bodyString = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 const bodyNumber = (value: unknown): number | undefined => typeof value === 'number' ? value : undefined;
@@ -35,7 +36,7 @@ export const mascobotHealthCheck = async (_req: Request, res: Response): Promise
         data: {
             gateway: gateway.getSummary(),
             liveRelay: mascobotLiveRelay.getSummary(),
-            openaiRealtime: getMascotLiveReadiness(),
+            openaiRealtime: getMascotLiveReadiness(mascobotLiveConfig),
         },
     });
 };

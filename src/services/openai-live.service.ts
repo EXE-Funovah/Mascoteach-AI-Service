@@ -172,11 +172,26 @@ export class OpenAiLiveService {
                     max_output_tokens: this.config.maxOutputTokens,
                     audio: {
                         input: {
+                            format: {
+                                type: 'audio/pcm',
+                                rate: this.config.botAudioSampleRateHz,
+                            },
+                            transcription: {
+                                model: this.config.inputTranscriptionModel,
+                                language: language,
+                            },
                             turn_detection: {
                                 type: 'server_vad',
+                                prefix_padding_ms: this.config.vadPrefixPaddingMs,
+                                silence_duration_ms: this.config.vadSilenceDurationMs,
+                                threshold: this.config.vadThreshold,
                             },
                         },
                         output: {
+                            format: {
+                                type: 'audio/pcm',
+                                rate: this.config.botAudioSampleRateHz,
+                            },
                             voice,
                         },
                     },
