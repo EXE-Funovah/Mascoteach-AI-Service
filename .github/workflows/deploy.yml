@@ -41,41 +41,6 @@ jobs:
               ;;
           esac
 
-      - name: Render .env for main
-        if: github.ref_name == 'main'
-        run: |
-          cat <<'EOF' > .env.deploy
-          ${{ secrets.AI_SERVICE_ENV_MAIN }}
-          EOF
-
-          if ! grep -q '[^[:space:]]' .env.deploy; then
-            echo "Missing required secret content: AI_SERVICE_ENV_MAIN"
-            exit 1
-          fi
-
-      - name: Render .env for development
-        if: github.ref_name == 'development'
-        run: |
-          cat <<'EOF' > .env.deploy
-          ${{ secrets.AI_SERVICE_ENV_DEVELOPMENT }}
-          EOF
-
-          if ! grep -q '[^[:space:]]' .env.deploy; then
-            echo "Missing required secret content: AI_SERVICE_ENV_DEVELOPMENT"
-            exit 1
-          fi
-
-      - name: Upload rendered .env to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-          source: .env.deploy
-          target: ${{ steps.deploy_config.outputs.deploy_path }}
-          overwrite: true
-
       - name: Deploy to Server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -94,9 +59,6 @@ jobs:
 
             echo "Deploying branch: ${DEPLOY_BRANCH}"
             echo "Deploy path: ${DEPLOY_PATH}"
-
-            mv .env.deploy .env
-
             git fetch origin "${DEPLOY_BRANCH}"
             git checkout --force -B "${DEPLOY_BRANCH}" "origin/${DEPLOY_BRANCH}"
             git reset --hard "origin/${DEPLOY_BRANCH}"
