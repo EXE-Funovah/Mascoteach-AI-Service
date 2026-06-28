@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { getMascobotLiveConfig, getMascotLiveConfig, getMascotLiveReadiness } from '../config/mascot-live.config';
-import { MascotLiveRuntimeConfig } from '../types/mascot-live.types';
+import { AuthenticatedMascotLiveUser, MascotLiveRuntimeConfig } from '../types/mascot-live.types';
 import { MascotLiveAccessResolver, MascotLiveAuthConfigError, MascotLiveUnauthorizedError } from '../services/mascot-live-auth.service';
 import {
     MascotLiveForbiddenError,
@@ -22,14 +22,43 @@ const getSingleRouteParam = (value: string | string[] | undefined): string => {
     return '';
 };
 
-const createMascotLiveHandlers = (config: MascotLiveRuntimeConfig) => {
+const createRobotRequester = (req: Request): AuthenticatedMascotLiveUser => {
+    const rawDeviceId = typeof req.body?.deviceId === 'string'
+        ? req.body.deviceId
+        : typeof req.query?.deviceId === 'string'
+            ? req.query.deviceId
+            : '';
+    const deviceId = rawDeviceId.trim() || 'robot';
+
+    return {
+        userId: `mascobot:${deviceId}`,
+        role: 'robot',
+        subscriptionTier: 'Robot',
+        isPremiumActive: true,
+        premiumExpiresAt: null,
+    };
+};
+
+const createMascotLiveHandlers = (
+    config: MascotLiveRuntimeConfig,
+    options: {
+        allowAnonymousRobotAccess?: boolean;
+    } = {},
+) => {
     const liveService = new OpenAiLiveService(config);
     const liveAccessResolver = new MascotLiveAccessResolver(config);
+    const resolveRequester = async (req: Request): Promise<AuthenticatedMascotLiveUser> => {
+        if (options.allowAnonymousRobotAccess) {
+            return createRobotRequester(req);
+        }
+
+        return liveAccessResolver.resolveAuthenticatedUser(req.headers.authorization);
+    };
 
     return {
         createSession: async (req: Request, res: Response): Promise<Response> => {
             try {
-                const requester = await liveAccessResolver.resolveAuthenticatedUser(req.headers.authorization);
+                const requester = await resolveRequester(req);
                 const created = await liveService.createSession({
                     displayName: typeof req.body?.displayName === 'string' ? req.body.displayName : undefined,
                     language: typeof req.body?.language === 'string' ? req.body.language : undefined,
@@ -94,7 +123,7 @@ const createMascotLiveHandlers = (config: MascotLiveRuntimeConfig) => {
         },
         getSession: async (req: Request, res: Response): Promise<Response> => {
             try {
-                const requester = await liveAccessResolver.resolveAuthenticatedUser(req.headers.authorization);
+                const requester = await resolveRequester(req);
                 const session = liveService.getSession(getSingleRouteParam(req.params.sessionId), requester.userId);
 
                 if (!session) {
@@ -145,7 +174,7 @@ const createMascotLiveHandlers = (config: MascotLiveRuntimeConfig) => {
         },
         endSession: async (req: Request, res: Response): Promise<Response> => {
             try {
-                const requester = await liveAccessResolver.resolveAuthenticatedUser(req.headers.authorization);
+                const requester = await resolveRequester(req);
                 const session = await liveService.endSession(getSingleRouteParam(req.params.sessionId), requester.userId);
 
                 return res.status(200).json({
@@ -207,7 +236,9 @@ const createMascotLiveHandlers = (config: MascotLiveRuntimeConfig) => {
 };
 
 const mobileLiveHandlers = createMascotLiveHandlers(getMascotLiveConfig());
-const robotLiveHandlers = createMascotLiveHandlers(getMascobotLiveConfig());
+const robotLiveHandlers = createMascotLiveHandlers(getMascobotLiveConfig(), {
+    allowAnonymousRobotAccess: true,
+});
 
 export const createMascotLiveSession = mobileLiveHandlers.createSession;
 export const getMascotLiveSession = mobileLiveHandlers.getSession;
