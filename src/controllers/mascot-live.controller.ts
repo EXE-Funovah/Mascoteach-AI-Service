@@ -43,10 +43,16 @@ const createMascotLiveHandlers = (
     config: MascotLiveRuntimeConfig,
     options: {
         allowAnonymousRobotAccess?: boolean;
+        logLabel?: string;
     } = {},
 ) => {
     const liveService = new OpenAiLiveService(config);
     const liveAccessResolver = new MascotLiveAccessResolver(config);
+    const logLabel = options.logLabel || 'mascot-live';
+    const liveLog = (message: string, meta?: Record<string, unknown>) => {
+        const suffix = meta ? ` ${JSON.stringify(meta)}` : '';
+        console.log(`[${logLabel}] ${message}${suffix}`);
+    };
     const resolveRequester = async (req: Request): Promise<AuthenticatedMascotLiveUser> => {
         if (options.allowAnonymousRobotAccess) {
             return createRobotRequester(req);
@@ -59,11 +65,28 @@ const createMascotLiveHandlers = (
         createSession: async (req: Request, res: Response): Promise<Response> => {
             try {
                 const requester = await resolveRequester(req);
+                liveLog('createSession request', {
+                    userId: requester.userId,
+                    role: requester.role,
+                    language: typeof req.body?.language === 'string' ? req.body.language : null,
+                    voice: typeof req.body?.voice === 'string' ? req.body.voice : null,
+                    displayName: typeof req.body?.displayName === 'string' ? req.body.displayName : null,
+                });
                 const created = await liveService.createSession({
                     displayName: typeof req.body?.displayName === 'string' ? req.body.displayName : undefined,
                     language: typeof req.body?.language === 'string' ? req.body.language : undefined,
                     voice: typeof req.body?.voice === 'string' ? req.body.voice : undefined,
                 }, requester);
+                liveLog('createSession success', {
+                    userId: requester.userId,
+                    sessionId: created.sessionId,
+                    provider: created.provider,
+                    engine: created.engine,
+                    model: created.model,
+                    language: created.language,
+                    voice: created.voice,
+                    maxDurationSeconds: created.maxDurationSeconds,
+                });
 
                 return res.status(201).json({
                     success: true,
@@ -71,6 +94,9 @@ const createMascotLiveHandlers = (
                     data: created,
                 });
             } catch (error: unknown) {
+                liveLog('createSession error', {
+                    error: error instanceof Error ? error.message : 'Unknown mascot live error',
+                });
                 if (error instanceof MascotLiveUnauthorizedError) {
                     return res.status(401).json({
                         success: false,
@@ -124,9 +150,18 @@ const createMascotLiveHandlers = (
         getSession: async (req: Request, res: Response): Promise<Response> => {
             try {
                 const requester = await resolveRequester(req);
-                const session = liveService.getSession(getSingleRouteParam(req.params.sessionId), requester.userId);
+                const sessionId = getSingleRouteParam(req.params.sessionId);
+                liveLog('getSession request', {
+                    userId: requester.userId,
+                    sessionId,
+                });
+                const session = liveService.getSession(sessionId, requester.userId);
 
                 if (!session) {
+                    liveLog('getSession miss', {
+                        userId: requester.userId,
+                        sessionId,
+                    });
                     return res.status(404).json({
                         success: false,
                         message: 'Mascot live session not found.',
@@ -134,12 +169,24 @@ const createMascotLiveHandlers = (
                     });
                 }
 
+                liveLog('getSession success', {
+                    userId: requester.userId,
+                    sessionId: session.sessionId,
+                    status: session.status,
+                    countedUsageSeconds: session.countedUsageSeconds,
+                    remainingDailySeconds: session.remainingDailySeconds,
+                });
+
                 return res.status(200).json({
                     success: true,
                     message: 'OpenAI Realtime session fetched.',
                     data: session,
                 });
             } catch (error: unknown) {
+                liveLog('getSession error', {
+                    error: error instanceof Error ? error.message : 'Unknown mascot live error',
+                    sessionId: getSingleRouteParam(req.params.sessionId),
+                });
                 if (error instanceof MascotLiveUnauthorizedError) {
                     return res.status(401).json({
                         success: false,
@@ -175,7 +222,18 @@ const createMascotLiveHandlers = (
         endSession: async (req: Request, res: Response): Promise<Response> => {
             try {
                 const requester = await resolveRequester(req);
-                const session = await liveService.endSession(getSingleRouteParam(req.params.sessionId), requester.userId);
+                const sessionId = getSingleRouteParam(req.params.sessionId);
+                liveLog('endSession request', {
+                    userId: requester.userId,
+                    sessionId,
+                });
+                const session = await liveService.endSession(sessionId, requester.userId);
+                liveLog('endSession success', {
+                    userId: requester.userId,
+                    sessionId: session.sessionId,
+                    status: session.status,
+                    countedUsageSeconds: session.countedUsageSeconds,
+                });
 
                 return res.status(200).json({
                     success: true,
@@ -183,6 +241,10 @@ const createMascotLiveHandlers = (
                     data: session,
                 });
             } catch (error: unknown) {
+                liveLog('endSession error', {
+                    error: error instanceof Error ? error.message : 'Unknown mascot live error',
+                    sessionId: getSingleRouteParam(req.params.sessionId),
+                });
                 if (error instanceof MascotLiveUnauthorizedError) {
                     return res.status(401).json({
                         success: false,
@@ -235,9 +297,12 @@ const createMascotLiveHandlers = (
     };
 };
 
-const mobileLiveHandlers = createMascotLiveHandlers(getMascotLiveConfig());
+const mobileLiveHandlers = createMascotLiveHandlers(getMascotLiveConfig(), {
+    logLabel: 'mobile-live',
+});
 const robotLiveHandlers = createMascotLiveHandlers(getMascobotLiveConfig(), {
     allowAnonymousRobotAccess: true,
+    logLabel: 'robot-live-http',
 });
 
 export const createMascotLiveSession = mobileLiveHandlers.createSession;

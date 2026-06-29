@@ -53,6 +53,11 @@ export class OpenAiLiveService {
         this.now = options.now ?? (() => new Date());
     }
 
+    private log(message: string, meta?: Record<string, unknown>): void {
+        const suffix = meta ? ` ${JSON.stringify(meta)}` : '';
+        console.log(`[OpenAiLiveService] ${message}${suffix}`);
+    }
+
     getReadiness(): MascotLiveReadiness {
         return {
             provider: this.config.provider,
@@ -121,6 +126,14 @@ export class OpenAiLiveService {
 
         this.sessions.set(sessionId, session);
         this.activeSessionByUser.set(access.userId, sessionId);
+        this.log('session created', {
+            userId: access.userId,
+            sessionId,
+            language,
+            voice,
+            maxDurationSeconds: sessionTtlSeconds,
+            premium: access.isPremiumActive,
+        });
         return session;
     }
 
@@ -132,6 +145,12 @@ export class OpenAiLiveService {
 
         this.ensureSessionOwnership(session, requesterUserId);
         this.synchronizeSessionUsage(session, this.now());
+        this.log('session fetched', {
+            userId: requesterUserId || session.userId,
+            sessionId: session.sessionId,
+            status: session.status,
+            countedUsageSeconds: session.countedUsageSeconds,
+        });
         return session;
     }
 
@@ -143,6 +162,12 @@ export class OpenAiLiveService {
 
         this.ensureSessionOwnership(existing, requesterUserId);
         this.synchronizeSessionUsage(existing, this.now(), true);
+        this.log('session ended', {
+            userId: requesterUserId || existing.userId,
+            sessionId: existing.sessionId,
+            status: existing.status,
+            countedUsageSeconds: existing.countedUsageSeconds,
+        });
         return existing;
     }
 
@@ -202,6 +227,10 @@ export class OpenAiLiveService {
         const rawBody = await this.parseResponseBody(response);
 
         if (!response.ok) {
+            this.log('client secret request failed', {
+                status: response.status,
+                body: this.stringifyUnknown(rawBody),
+            });
             throw new OpenAiLiveConfigError(
                 `OpenAI Realtime client secret request failed (${response.status}): ${this.stringifyUnknown(rawBody)}`,
             );
