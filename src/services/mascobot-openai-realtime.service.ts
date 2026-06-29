@@ -58,6 +58,11 @@ export class MascobotOpenAiRealtimeService {
         private readonly createSocket: RealtimeSocketFactory = (url, options) => new WebSocket(url, options),
     ) {}
 
+    private log(message: string, meta?: Record<string, unknown>): void {
+        const suffix = meta ? ` ${JSON.stringify(meta)}` : '';
+        console.log(`[MascobotOpenAiRealtimeService] ${message}${suffix}`);
+    }
+
     connectPeer(connection: MascobotLivePeerConnection): MascobotLiveSessionState {
         const now = new Date().toISOString();
         const state = this.getOrCreate(connection.sessionId);
@@ -76,6 +81,14 @@ export class MascobotOpenAiRealtimeService {
             state.mainConnection = connection;
             state.session.main = peerState;
         }
+
+        this.log('peer connected', {
+            sessionId: connection.sessionId,
+            deviceId: connection.deviceId,
+            role: connection.role,
+            eyeConnected: !!state.session.eye,
+            mainConnected: !!state.session.main,
+        });
 
         this.notifyPeerState(state);
         this.ensureUpstream(state);
@@ -101,6 +114,14 @@ export class MascobotOpenAiRealtimeService {
             state.session.main = null;
         }
 
+        this.log('peer disconnected', {
+            sessionId,
+            deviceId,
+            role,
+            eyeConnected: !!state.session.eye,
+            mainConnected: !!state.session.main,
+        });
+
         if (!state.session.eye && !state.session.main) {
             this.closeUpstream(state);
             this.sessions.delete(sessionId);
@@ -117,17 +138,37 @@ export class MascobotOpenAiRealtimeService {
     relayEyeAudio(sessionId: string, deviceId: string, payload: Buffer): boolean {
         const state = this.sessions.get(sessionId);
         if (!state?.session.eye || state.session.eye.deviceId !== deviceId) {
+            this.log('eye audio rejected', {
+                sessionId,
+                deviceId,
+                reason: 'eye-session-mismatch',
+                bytes: payload.byteLength,
+            });
             return false;
         }
 
         state.session.eye.lastSeenAt = new Date().toISOString();
         if (state.session.inputMuted || !state.eyeConnection || !state.mainConnection) {
+            this.log('eye audio rejected', {
+                sessionId,
+                deviceId,
+                reason: state.session.inputMuted ? 'input-muted' : (!state.eyeConnection ? 'no-eye-connection' : 'no-main-connection'),
+                bytes: payload.byteLength,
+                upstreamState: state.session.upstreamState,
+            });
             return false;
         }
 
         this.ensureUpstream(state);
         if (!state.upstream || state.upstream.readyState !== OPEN) {
             this.queuePendingEyeAudio(state, payload);
+            this.log('eye audio queued', {
+                sessionId,
+                deviceId,
+                bytes: payload.byteLength,
+                pendingChunks: state.pendingEyeAudioParts.length,
+                upstreamState: state.session.upstreamState,
+            });
             return true;
         }
 
@@ -205,9 +246,17 @@ export class MascobotOpenAiRealtimeService {
 
         state.upstream = upstream;
         this.setUpstreamState(state, 'connecting');
+        this.log('upstream connecting', {
+            sessionId: state.session.sessionId,
+            eyeConnected: !!state.session.eye,
+            mainConnected: !!state.session.main,
+        });
 
         upstream.on('open', () => {
             this.setUpstreamState(state, 'connected');
+            this.log('upstream connected', {
+                sessionId: state.session.sessionId,
+            });
             this.sendSessionUpdate(state);
             this.flushPendingEyeAudio(state);
         });
@@ -291,6 +340,11 @@ export class MascobotOpenAiRealtimeService {
             return;
         }
 
+        this.log('flushing pending eye audio', {
+            sessionId: state.session.sessionId,
+            chunks: state.pendingEyeAudioParts.length,
+        });
+
         for (const chunk of state.pendingEyeAudioParts) {
             this.sendUpstreamAudioChunk(state, chunk);
         }
@@ -305,6 +359,13 @@ export class MascobotOpenAiRealtimeService {
         state.session.uploadedChunks += 1;
         state.session.uploadedBytes += payload.byteLength;
         state.session.lastAudioAt = new Date().toISOString();
+        if (state.session.uploadedChunks <= 3 || (state.session.uploadedChunks % 25) === 0) {
+            this.log('upstream audio appended', {
+                sessionId: state.session.sessionId,
+                uploadedChunks: state.session.uploadedChunks,
+                bytes: payload.byteLength,
+            });
+        }
 
         state.upstream.send(
             JSON.stringify({
@@ -484,6 +545,13 @@ export class MascobotOpenAiRealtimeService {
         message: string,
         shouldClose: boolean = true,
     ): void {
+        this.log('upstream failure', {
+            sessionId: state.session.sessionId,
+            message,
+            shouldClose,
+            eyeConnected: !!state.session.eye,
+            mainConnected: !!state.session.main,
+        });
         this.clearAssistantAudio(state);
         if (shouldClose) {
             this.closeUpstream(state);

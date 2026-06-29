@@ -50,6 +50,11 @@ app.use('/api/v1/mascobot', mascobotRoutes);
 
 liveWss.on('connection', (socket: WebSocket, _request: IncomingMessage, peer: unknown) => {
     const connection = peer as { sessionId: string; deviceId: string; role: 'eye' | 'main' };
+    console.log(`[robot-live-ws] connected ${JSON.stringify({
+        sessionId: connection.sessionId,
+        deviceId: connection.deviceId,
+        role: connection.role,
+    })}`);
     mascobotLiveRelay.connectPeer({
         sessionId: connection.sessionId,
         deviceId: connection.deviceId,
@@ -69,7 +74,14 @@ liveWss.on('connection', (socket: WebSocket, _request: IncomingMessage, peer: un
     socket.on('message', (data: Buffer, isBinary: boolean) => {
         if (isBinary) {
             if (connection.role === 'eye') {
-                mascobotLiveRelay.relayEyeAudio(connection.sessionId, connection.deviceId, Buffer.from(data));
+                const accepted = mascobotLiveRelay.relayEyeAudio(connection.sessionId, connection.deviceId, Buffer.from(data));
+                if (!accepted) {
+                    console.log(`[robot-live-ws] eye-audio dropped ${JSON.stringify({
+                        sessionId: connection.sessionId,
+                        deviceId: connection.deviceId,
+                        bytes: data.byteLength,
+                    })}`);
+                }
             }
             return;
         }
@@ -80,11 +92,18 @@ liveWss.on('connection', (socket: WebSocket, _request: IncomingMessage, peer: un
         }
     });
 
-    const cleanup = () => {
+    const cleanup = (event: string, detail?: string) => {
+        console.log(`[robot-live-ws] disconnected ${JSON.stringify({
+            sessionId: connection.sessionId,
+            deviceId: connection.deviceId,
+            role: connection.role,
+            event,
+            detail: detail || null,
+        })}`);
         mascobotLiveRelay.disconnectPeer(connection.sessionId, connection.deviceId, connection.role);
     };
-    socket.on('close', cleanup);
-    socket.on('error', cleanup);
+    socket.on('close', (code, reason) => cleanup('close', `${code}:${reason?.toString?.() || ''}`));
+    socket.on('error', (error) => cleanup('error', error instanceof Error ? error.message : String(error)));
 });
 
 server.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
