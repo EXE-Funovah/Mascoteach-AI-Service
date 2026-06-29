@@ -169,5 +169,5 @@ test('MascobotOpenAiRealtimeService reports config errors to peers and skips ups
 
     assert.equal(socketCreated, false);
     assert.equal(eyeText.some((payload) => payload.includes('OPENAI_API_KEY')), true);
-    assert.equal(service.relayEyeAudio('live-ai-02', 'eye-01', Buffer.from([1, 2])), false);
+    assert.equal(service.relayEyeAudio('live-ai-02', 'eye-01', Buffer.from([1, 2])), true);
 });

@@ -40,6 +40,7 @@ interface SessionConnectionState {
     mainConnection: MascobotLivePeerConnection | null;
     upstream: RealtimeSocketLike | null;
     assistantAudioParts: Buffer[];
+    pendingEyeAudioParts: Buffer[];
     flushTimer: NodeJS.Timeout | null;
 }
 
@@ -47,6 +48,7 @@ const OPEN = 1;
 const CONNECTING = 0;
 const MAIN_PCM_CHUNK_BYTES = 960; // 20 ms of 24 kHz mono PCM16
 const MAIN_PCM_CHUNK_INTERVAL_MS = 8;
+const MAX_PENDING_EYE_AUDIO_CHUNKS = 128;
 
 export class MascobotOpenAiRealtimeService {
     private readonly sessions = new Map<string, SessionConnectionState>();
@@ -125,19 +127,11 @@ export class MascobotOpenAiRealtimeService {
 
         this.ensureUpstream(state);
         if (!state.upstream || state.upstream.readyState !== OPEN) {
-            return false;
+            this.queuePendingEyeAudio(state, payload);
+            return true;
         }
 
-        state.session.uploadedChunks += 1;
-        state.session.uploadedBytes += payload.byteLength;
-        state.session.lastAudioAt = new Date().toISOString();
-
-        state.upstream.send(
-            JSON.stringify({
-                type: 'input_audio_buffer.append',
-                audio: payload.toString('base64'),
-            }),
-        );
+        this.sendUpstreamAudioChunk(state, payload);
         return true;
     }
 
@@ -181,6 +175,7 @@ export class MascobotOpenAiRealtimeService {
             mainConnection: null,
             upstream: null,
             assistantAudioParts: [],
+            pendingEyeAudioParts: [],
             flushTimer: null,
         };
         this.sessions.set(sessionId, created);
@@ -214,6 +209,7 @@ export class MascobotOpenAiRealtimeService {
         upstream.on('open', () => {
             this.setUpstreamState(state, 'connected');
             this.sendSessionUpdate(state);
+            this.flushPendingEyeAudio(state);
         });
 
         upstream.on('message', (data) => {
@@ -275,6 +271,45 @@ export class MascobotOpenAiRealtimeService {
                         },
                     },
                 },
+            }),
+        );
+    }
+
+    private queuePendingEyeAudio(state: SessionConnectionState, payload: Buffer): void {
+        if (state.pendingEyeAudioParts.length >= MAX_PENDING_EYE_AUDIO_CHUNKS) {
+            state.pendingEyeAudioParts.shift();
+        }
+        state.pendingEyeAudioParts.push(Buffer.from(payload));
+    }
+
+    private flushPendingEyeAudio(state: SessionConnectionState): void {
+        if (!state.upstream || state.upstream.readyState !== OPEN) {
+            return;
+        }
+
+        if (state.pendingEyeAudioParts.length === 0) {
+            return;
+        }
+
+        for (const chunk of state.pendingEyeAudioParts) {
+            this.sendUpstreamAudioChunk(state, chunk);
+        }
+        state.pendingEyeAudioParts = [];
+    }
+
+    private sendUpstreamAudioChunk(state: SessionConnectionState, payload: Buffer): void {
+        if (!state.upstream || state.upstream.readyState !== OPEN) {
+            return;
+        }
+
+        state.session.uploadedChunks += 1;
+        state.session.uploadedBytes += payload.byteLength;
+        state.session.lastAudioAt = new Date().toISOString();
+
+        state.upstream.send(
+            JSON.stringify({
+                type: 'input_audio_buffer.append',
+                audio: payload.toString('base64'),
             }),
         );
     }
@@ -437,6 +472,7 @@ export class MascobotOpenAiRealtimeService {
 
     private clearAssistantAudio(state: SessionConnectionState): void {
         state.assistantAudioParts = [];
+        state.pendingEyeAudioParts = [];
         if (state.flushTimer) {
             clearTimeout(state.flushTimer);
             state.flushTimer = null;
