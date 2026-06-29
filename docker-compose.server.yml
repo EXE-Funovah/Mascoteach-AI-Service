@@ -1,9 +1,11 @@
-﻿services:
+services:
   ai_service:
     build: .
     container_name: ${CONTAINER_NAME:-mascoteach_ai}
     restart: unless-stopped
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${HOST_PORT:-5001}:${PORT:-5001}"
