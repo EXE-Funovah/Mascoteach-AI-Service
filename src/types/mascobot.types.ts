@@ -74,6 +74,7 @@ export interface MascobotResponseInput {
 }
 
 export interface MascobotLivePeerConnection {
+    connectionId?: string;
     sessionId: string;
     deviceId: string;
     role: MascobotLiveRole;

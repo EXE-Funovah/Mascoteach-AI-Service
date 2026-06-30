@@ -37,18 +37,26 @@ type RealtimeSocketFactory = (url: string, options: ClientOptions) => RealtimeSo
 interface SessionConnectionState {
     session: MascobotLiveSessionState;
     eyeConnection: MascobotLivePeerConnection | null;
+    eyeConnectionId: string | null;
     mainConnection: MascobotLivePeerConnection | null;
+    mainConnectionId: string | null;
     upstream: RealtimeSocketLike | null;
     assistantAudioParts: Buffer[];
     pendingEyeAudioParts: Buffer[];
     flushTimer: NodeJS.Timeout | null;
+    sessionExpiryTimer: NodeJS.Timeout | null;
 }
 
 const OPEN = 1;
 const CONNECTING = 0;
 const MAIN_PCM_CHUNK_BYTES = 960; // 20 ms of 24 kHz mono PCM16
-const MAIN_PCM_CHUNK_INTERVAL_MS = 8;
+const MAIN_PCM_CHUNK_INTERVAL_MS = 20;
+const MAIN_AUDIO_MAGIC_0 = 0x4d; // M
+const MAIN_AUDIO_MAGIC_1 = 0x41; // A
+const MAIN_AUDIO_CODEC_PCM16 = 0;
+const MAIN_AUDIO_CODEC_ULAW = 1;
 const MAX_PENDING_EYE_AUDIO_CHUNKS = 128;
+const SESSION_EXPIRY_GRACE_MS = 15000;
 
 export class MascobotOpenAiRealtimeService {
     private readonly sessions = new Map<string, SessionConnectionState>();
@@ -66,6 +74,11 @@ export class MascobotOpenAiRealtimeService {
     connectPeer(connection: MascobotLivePeerConnection): MascobotLiveSessionState {
         const now = new Date().toISOString();
         const state = this.getOrCreate(connection.sessionId);
+        const connectionId = connection.connectionId || `${connection.role}:${connection.deviceId}:${Date.now()}`;
+        if (state.sessionExpiryTimer) {
+            clearTimeout(state.sessionExpiryTimer);
+            state.sessionExpiryTimer = null;
+        }
         const peerState: MascobotLivePeerState = {
             sessionId: connection.sessionId,
             deviceId: connection.deviceId,
@@ -75,10 +88,30 @@ export class MascobotOpenAiRealtimeService {
         };
 
         if (connection.role === 'eye') {
+            if (state.eyeConnectionId && state.eyeConnectionId !== connectionId) {
+                this.log('peer replaced', {
+                    sessionId: connection.sessionId,
+                    deviceId: connection.deviceId,
+                    role: connection.role,
+                    previousConnectionId: state.eyeConnectionId,
+                    nextConnectionId: connectionId,
+                });
+            }
             state.eyeConnection = connection;
+            state.eyeConnectionId = connectionId;
             state.session.eye = peerState;
         } else {
+            if (state.mainConnectionId && state.mainConnectionId !== connectionId) {
+                this.log('peer replaced', {
+                    sessionId: connection.sessionId,
+                    deviceId: connection.deviceId,
+                    role: connection.role,
+                    previousConnectionId: state.mainConnectionId,
+                    nextConnectionId: connectionId,
+                });
+            }
             state.mainConnection = connection;
+            state.mainConnectionId = connectionId;
             state.session.main = peerState;
         }
 
@@ -95,10 +128,22 @@ export class MascobotOpenAiRealtimeService {
         return this.cloneSession(state.session);
     }
 
-    disconnectPeer(sessionId: string, deviceId: string, role: MascobotLiveRole): MascobotLiveSessionState | null {
+    disconnectPeer(sessionId: string, deviceId: string, role: MascobotLiveRole, connectionId: string): MascobotLiveSessionState | null {
         const state = this.sessions.get(sessionId);
         if (!state) {
             return null;
+        }
+
+        const activeConnectionId = role === 'eye' ? state.eyeConnectionId : state.mainConnectionId;
+        if (activeConnectionId && activeConnectionId !== connectionId) {
+            this.log('stale peer disconnect ignored', {
+                sessionId,
+                deviceId,
+                role,
+                connectionId,
+                activeConnectionId,
+            });
+            return this.cloneSession(state.session);
         }
 
         const current = role === 'eye' ? state.session.eye : state.session.main;
@@ -108,9 +153,11 @@ export class MascobotOpenAiRealtimeService {
 
         if (role === 'eye') {
             state.eyeConnection = null;
+            state.eyeConnectionId = null;
             state.session.eye = null;
         } else {
             state.mainConnection = null;
+            state.mainConnectionId = null;
             state.session.main = null;
         }
 
@@ -123,14 +170,29 @@ export class MascobotOpenAiRealtimeService {
         });
 
         if (!state.session.eye && !state.session.main) {
-            this.closeUpstream(state);
-            this.sessions.delete(sessionId);
+            state.sessionExpiryTimer = setTimeout(() => {
+                const latest = this.sessions.get(sessionId);
+                if (!latest || latest !== state) {
+                    return;
+                }
+                if (latest.session.eye || latest.session.main) {
+                    return;
+                }
+                this.log('session expired after peer grace window', {
+                    sessionId,
+                    graceMs: SESSION_EXPIRY_GRACE_MS,
+                });
+                this.closeUpstream(latest);
+                this.sessions.delete(sessionId);
+            }, SESSION_EXPIRY_GRACE_MS);
             return null;
         }
 
-        this.clearAssistantAudio(state);
-        state.session.assistantSpeaking = false;
-        this.setInputMuted(state, false);
+        if (role === 'main') {
+            this.clearAssistantAudio(state);
+            state.session.assistantSpeaking = false;
+            this.setInputMuted(state, false);
+        }
         this.notifyPeerState(state);
         return this.cloneSession(state.session);
     }
@@ -213,11 +275,14 @@ export class MascobotOpenAiRealtimeService {
                 lastTranscript: null,
             },
             eyeConnection: null,
+            eyeConnectionId: null,
             mainConnection: null,
+            mainConnectionId: null,
             upstream: null,
             assistantAudioParts: [],
             pendingEyeAudioParts: [],
             flushTimer: null,
+            sessionExpiryTimer: null,
         };
         this.sessions.set(sessionId, created);
         return created;
@@ -523,12 +588,61 @@ export class MascobotOpenAiRealtimeService {
                 return;
             }
 
-            state.mainConnection.sendBinary(combined.subarray(offset, offset + MAIN_PCM_CHUNK_BYTES));
-            offset += MAIN_PCM_CHUNK_BYTES;
+            const pcmChunk = combined.subarray(offset, offset + MAIN_PCM_CHUNK_BYTES);
+            state.mainConnection.sendBinary(this.encodeMainAudioChunk(pcmChunk));
+            offset += pcmChunk.byteLength;
             state.flushTimer = setTimeout(sendNextChunk, MAIN_PCM_CHUNK_INTERVAL_MS);
         };
 
         sendNextChunk();
+    }
+
+    private encodeMainAudioChunk(pcmChunk: Buffer): Buffer {
+        const ulawPayload = this.encodePcm16ToMuLaw(pcmChunk);
+        const framed = Buffer.allocUnsafe(4 + ulawPayload.length);
+        framed[0] = MAIN_AUDIO_MAGIC_0;
+        framed[1] = MAIN_AUDIO_MAGIC_1;
+        framed[2] = MAIN_AUDIO_CODEC_ULAW;
+        framed[3] = 0;
+        ulawPayload.copy(framed, 4);
+        return framed;
+    }
+
+    private encodePcm16ToMuLaw(pcmChunk: Buffer): Buffer {
+        const sampleCount = Math.floor(pcmChunk.byteLength / 2);
+        const encoded = Buffer.allocUnsafe(sampleCount);
+        for (let i = 0; i < sampleCount; i += 1) {
+            const sample = pcmChunk.readInt16LE(i * 2);
+            encoded[i] = this.linearToMuLawSample(sample);
+        }
+        return encoded;
+    }
+
+    private linearToMuLawSample(sample: number): number {
+        const MULAW_MAX = 0x1fff;
+        const MULAW_BIAS = 33;
+
+        let pcm = sample;
+        let mask = 0xff;
+        if (pcm < 0) {
+            pcm = -pcm;
+            mask = 0x7f;
+        }
+
+        pcm += MULAW_BIAS;
+        if (pcm > MULAW_MAX) {
+            pcm = MULAW_MAX;
+        }
+
+        let segment = 0;
+        let value = pcm >> 6;
+        while (value > 1 && segment < 7) {
+            segment += 1;
+            value >>= 1;
+        }
+
+        const mantissa = (pcm >> (segment + 1)) & 0x0f;
+        return (~((segment << 4) | mantissa) & mask) & 0xff;
     }
 
     private clearAssistantAudio(state: SessionConnectionState): void {

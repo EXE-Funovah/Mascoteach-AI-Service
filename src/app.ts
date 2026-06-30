@@ -50,12 +50,15 @@ app.use('/api/v1/mascobot', mascobotRoutes);
 
 liveWss.on('connection', (socket: WebSocket, _request: IncomingMessage, peer: unknown) => {
     const connection = peer as { sessionId: string; deviceId: string; role: 'eye' | 'main' };
+    const connectionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     console.log(`[robot-live-ws] connected ${JSON.stringify({
+        connectionId,
         sessionId: connection.sessionId,
         deviceId: connection.deviceId,
         role: connection.role,
     })}`);
     mascobotLiveRelay.connectPeer({
+        connectionId,
         sessionId: connection.sessionId,
         deviceId: connection.deviceId,
         role: connection.role,
@@ -94,13 +97,14 @@ liveWss.on('connection', (socket: WebSocket, _request: IncomingMessage, peer: un
 
     const cleanup = (event: string, detail?: string) => {
         console.log(`[robot-live-ws] disconnected ${JSON.stringify({
+            connectionId,
             sessionId: connection.sessionId,
             deviceId: connection.deviceId,
             role: connection.role,
             event,
             detail: detail || null,
         })}`);
-        mascobotLiveRelay.disconnectPeer(connection.sessionId, connection.deviceId, connection.role);
+        mascobotLiveRelay.disconnectPeer(connection.sessionId, connection.deviceId, connection.role, connectionId);
     };
     socket.on('close', (code, reason) => cleanup('close', `${code}:${reason?.toString?.() || ''}`));
     socket.on('error', (error) => cleanup('error', error instanceof Error ? error.message : String(error)));

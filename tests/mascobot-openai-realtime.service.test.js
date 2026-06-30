@@ -75,6 +75,7 @@ test('MascobotOpenAiRealtimeService bridges EYE audio to OpenAI and forwards ass
     const mainBinary = [];
 
     service.connectPeer({
+        connectionId: 'eye-conn-1',
         sessionId: 'live-ai-01',
         deviceId: 'eye-01',
         role: 'eye',
@@ -85,6 +86,7 @@ test('MascobotOpenAiRealtimeService bridges EYE audio to OpenAI and forwards ass
     });
 
     service.connectPeer({
+        connectionId: 'main-conn-1',
         sessionId: 'live-ai-01',
         deviceId: 'main-01',
         role: 'main',
@@ -130,7 +132,10 @@ test('MascobotOpenAiRealtimeService bridges EYE audio to OpenAI and forwards ass
     sockets[0].emitMessage({ type: 'response.done' });
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.equal(mainBinary.length, 1);
-    assert.equal(mainBinary[0].equals(assistantChunk), true);
+    assert.equal(mainBinary[0][0], 0x4d);
+    assert.equal(mainBinary[0][1], 0x41);
+    assert.equal(mainBinary[0][2], 1);
+    assert.equal(mainBinary[0].length, 4 + (assistantChunk.length / 2));
     assert.equal(mainText.some((payload) => payload.includes('"speaking"')), true);
     assert.equal(eyeText.some((payload) => payload.includes('"unmute_input"')), true);
 });
@@ -153,6 +158,7 @@ test('MascobotOpenAiRealtimeService reports config errors to peers and skips ups
 
     const eyeText = [];
     service.connectPeer({
+        connectionId: 'eye-conn-2',
         sessionId: 'live-ai-02',
         deviceId: 'eye-01',
         role: 'eye',
@@ -160,6 +166,7 @@ test('MascobotOpenAiRealtimeService reports config errors to peers and skips ups
         sendBinary: () => {},
     });
     service.connectPeer({
+        connectionId: 'main-conn-2',
         sessionId: 'live-ai-02',
         deviceId: 'main-01',
         role: 'main',
@@ -170,4 +177,44 @@ test('MascobotOpenAiRealtimeService reports config errors to peers and skips ups
     assert.equal(socketCreated, false);
     assert.equal(eyeText.some((payload) => payload.includes('OPENAI_API_KEY')), true);
     assert.equal(service.relayEyeAudio('live-ai-02', 'eye-01', Buffer.from([1, 2])), true);
+});
+
+test('MascobotOpenAiRealtimeService ignores stale disconnects after same-peer reconnect takeover', () => {
+    const { MascobotOpenAiRealtimeService } = require('../dist/services/mascobot-openai-realtime.service.js');
+
+    const service = new MascobotOpenAiRealtimeService(makeConfig(), () => new FakeSocket('', {}));
+
+    service.connectPeer({
+        connectionId: 'eye-old',
+        sessionId: 'live-ai-03',
+        deviceId: 'eye-01',
+        role: 'eye',
+        sendText: () => {},
+        sendBinary: () => {},
+    });
+
+    service.connectPeer({
+        connectionId: 'main-03',
+        sessionId: 'live-ai-03',
+        deviceId: 'main-01',
+        role: 'main',
+        sendText: () => {},
+        sendBinary: () => {},
+    });
+
+    service.connectPeer({
+        connectionId: 'eye-new',
+        sessionId: 'live-ai-03',
+        deviceId: 'eye-01',
+        role: 'eye',
+        sendText: () => {},
+        sendBinary: () => {},
+    });
+
+    const staleResult = service.disconnectPeer('live-ai-03', 'eye-01', 'eye', 'eye-old');
+    assert.equal(staleResult?.eye?.deviceId, 'eye-01');
+
+    const session = service.getSession('live-ai-03');
+    assert.equal(session?.eye?.deviceId, 'eye-01');
+    assert.equal(session?.main?.deviceId, 'main-01');
 });
