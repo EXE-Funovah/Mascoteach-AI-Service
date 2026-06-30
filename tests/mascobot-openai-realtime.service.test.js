@@ -134,8 +134,8 @@ test('MascobotOpenAiRealtimeService bridges EYE audio to OpenAI and forwards ass
     assert.equal(mainBinary.length, 1);
     assert.equal(mainBinary[0][0], 0x4d);
     assert.equal(mainBinary[0][1], 0x41);
-    assert.equal(mainBinary[0][2], 1);
-    assert.equal(mainBinary[0].length, 4 + (assistantChunk.length / 2));
+    assert.equal(mainBinary[0][2], 0);
+    assert.equal(mainBinary[0].length, 4 + assistantChunk.length);
     assert.equal(mainText.some((payload) => payload.includes('"speaking"')), true);
     assert.equal(eyeText.some((payload) => payload.includes('"unmute_input"')), true);
 });

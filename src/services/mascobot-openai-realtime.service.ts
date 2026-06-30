@@ -54,7 +54,6 @@ const MAIN_PCM_CHUNK_INTERVAL_MS = 20;
 const MAIN_AUDIO_MAGIC_0 = 0x4d; // M
 const MAIN_AUDIO_MAGIC_1 = 0x41; // A
 const MAIN_AUDIO_CODEC_PCM16 = 0;
-const MAIN_AUDIO_CODEC_ULAW = 1;
 const MAX_PENDING_EYE_AUDIO_CHUNKS = 128;
 const SESSION_EXPIRY_GRACE_MS = 15000;
 
@@ -598,51 +597,13 @@ export class MascobotOpenAiRealtimeService {
     }
 
     private encodeMainAudioChunk(pcmChunk: Buffer): Buffer {
-        const ulawPayload = this.encodePcm16ToMuLaw(pcmChunk);
-        const framed = Buffer.allocUnsafe(4 + ulawPayload.length);
+        const framed = Buffer.allocUnsafe(4 + pcmChunk.length);
         framed[0] = MAIN_AUDIO_MAGIC_0;
         framed[1] = MAIN_AUDIO_MAGIC_1;
-        framed[2] = MAIN_AUDIO_CODEC_ULAW;
+        framed[2] = MAIN_AUDIO_CODEC_PCM16;
         framed[3] = 0;
-        ulawPayload.copy(framed, 4);
+        pcmChunk.copy(framed, 4);
         return framed;
-    }
-
-    private encodePcm16ToMuLaw(pcmChunk: Buffer): Buffer {
-        const sampleCount = Math.floor(pcmChunk.byteLength / 2);
-        const encoded = Buffer.allocUnsafe(sampleCount);
-        for (let i = 0; i < sampleCount; i += 1) {
-            const sample = pcmChunk.readInt16LE(i * 2);
-            encoded[i] = this.linearToMuLawSample(sample);
-        }
-        return encoded;
-    }
-
-    private linearToMuLawSample(sample: number): number {
-        const MULAW_MAX = 0x1fff;
-        const MULAW_BIAS = 33;
-
-        let pcm = sample;
-        let mask = 0xff;
-        if (pcm < 0) {
-            pcm = -pcm;
-            mask = 0x7f;
-        }
-
-        pcm += MULAW_BIAS;
-        if (pcm > MULAW_MAX) {
-            pcm = MULAW_MAX;
-        }
-
-        let segment = 0;
-        let value = pcm >> 6;
-        while (value > 1 && segment < 7) {
-            segment += 1;
-            value >>= 1;
-        }
-
-        const mantissa = (pcm >> (segment + 1)) & 0x0f;
-        return (~((segment << 4) | mantissa) & mask) & 0xff;
     }
 
     private clearAssistantAudio(state: SessionConnectionState): void {
